@@ -33,18 +33,19 @@ class Resource:
 
 class Game:
     def __init__(self) -> None:
+        self.start_money = 200.0
+        self.money = self.start_money
         self.income_mult = 1
         self.resources = [
             Resource(price=4, cost_mult=1.07, cost_increase_step=0, income=3),
             Resource(price=300, cost_mult=1.15, cost_increase_step=0, income=300),
             Resource(price=6, cost_mult=1.25, cost_increase_step=0, income=5),
         ]
-        self.money = 200.0
         self.step_ = 0
 
     @property
     def income(self):
-        return sum(r.income for r in self.resources)
+        return sum(r.income for r in self.resources) * self.income_mult
 
     @property
     def owned(self):
@@ -56,7 +57,9 @@ class Game:
 
     def get_values(self):
         # cps = self.INCOMES / self.costs
-        break_even_times = [r.get_break_even() for r in self.resources]
+        break_even_times = [
+            r.get_break_even() * self.income_mult for r in self.resources
+        ]
         return break_even_times
 
     def buy(self, idx):
@@ -75,7 +78,7 @@ class Game:
             f"Owned: {self.owned}, "
             f"Income: {self.income}, "
             f"Costs: {self.costs}, "
-            f"CPS: {self.time_untill(goal)}"
+            f"Untill Goal: {self.time_untill(goal)}"
             # f"values: {self.get_values()}"
         )
 
@@ -131,6 +134,20 @@ class Game:
             assert posttime < pretime - 0.99
             # time.sleep(0.1)
         return self.step_
+
+    def reset(self):
+        for r in self.resources:
+            r.quantity = 0
+        self.money = self.start_money
+        self.income_mult = 1
+
+    def ascend(self):
+        if self.money > 499:
+            new_mult = self.money / 500
+        else:
+            new_mult = 1
+        self.reset()
+        self.income_mult = new_mult
 
 
 def main():
