@@ -27,6 +27,9 @@ class Resource:
     def price(self):
         return self._price
 
+    def __repr__(self) -> str:
+        return f"Resource({self.quantity, self.price, self.income})"
+
 
 class Game:
     def __init__(self) -> None:
@@ -36,7 +39,6 @@ class Game:
             Resource(price=300, cost_mult=1.15, cost_increase_step=0, income=300),
             Resource(price=6, cost_mult=1.25, cost_increase_step=0, income=5),
         ]
-        self.GOAL = 1000
         self.money = 200.0
         self.step_ = 0
 
@@ -118,21 +120,24 @@ class Game:
             return -1
         return curr_candidate
 
+    def solve(self, goal):
+        while self.money < goal:
+            pretime = self.time_untill(goal)
+            bought = self.buy(self.optimal_play(goal))
+            while bought:
+                bought = self.buy(self.optimal_play(goal))
+            self.step(goal)
+            posttime = self.time_untill(goal)
+            assert posttime < pretime - 0.99
+            # time.sleep(0.1)
+        return self.step_
 
-def main(goal):
-    game = Game()
-    while game.money < goal:
-        pretime = game.time_untill(goal)
-        bought = game.buy(game.optimal_play(goal))
-        while bought:
-            bought = game.buy(game.optimal_play(goal))
-        game.step(goal)
-        posttime = game.time_untill(goal)
-        assert posttime < pretime - 0.99
-        # time.sleep(0.1)
-    return game.step_
+
+def main():
+    for goal in [5000, 50000, 5e8]:
+        game = Game()
+        print(game.solve(goal))
 
 
 if __name__ == "__main__":
-    for goal in [5000, 50000, 5e8]:
-        print(main(goal))
+    main()
