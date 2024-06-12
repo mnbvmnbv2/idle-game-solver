@@ -28,7 +28,7 @@ class Resource:
         return self._price
 
     def __repr__(self) -> str:
-        return f"Resource({self.quantity, self.price, self.income})"
+        return f"Resource({self.quantity}, {self.price:.2f}, {self._one_income})"
 
 
 class Game:
