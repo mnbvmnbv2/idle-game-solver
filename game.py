@@ -1,5 +1,6 @@
 import numpy as np
 import time
+import matplotlib.pyplot as plt
 
 
 class Resource:
@@ -124,16 +125,28 @@ class Game:
         return curr_candidate
 
     def solve(self, goal, verbose=False):
+        # goal_mult = self.get_ascend_value(goal)
+
+        if goal > 5000:
+            self.solve(goal * 0.06)
+            self.ascend()
+
+        return self.non_ascend_solve(goal, verbose)
+
+    def non_ascend_solve(self, goal, verbose=False):
         while self.money < goal:
             pretime = self.time_untill(goal)
-            bought = self.buy(self.optimal_play(goal))
-            while bought:
-                bought = self.buy(self.optimal_play(goal))
+            while self.buy(self.optimal_play(goal)):
+                pass
             self.step(goal, verbose)
             posttime = self.time_untill(goal)
             assert posttime < pretime - 0.99
-            # time.sleep(0.1)
         return self.step_
+
+    def ghost_solve(self, goal, mult=1):
+        ghost_game = self.__class__()
+        ghost_game.income_mult = mult
+        return ghost_game.non_ascend_solve(goal)
 
     def reset(self):
         for r in self.resources:
@@ -142,12 +155,14 @@ class Game:
         self.income_mult = 1
 
     def ascend(self):
-        if self.money > 499:
-            new_mult = self.money / 500
-        else:
-            new_mult = 1
+        new_mult = self.get_ascend_value(self.money)
         self.reset()
         self.income_mult = new_mult
+
+    def get_ascend_value(self, money):
+        if money > 500:
+            return money / 500
+        return 1
 
     # def get_optimal_ascend(self):
 
@@ -155,9 +170,17 @@ class Game:
 def main():
     # game = Game()
     # game.solve(5000, verbose=True)
-    for goal in [5000, 50000, 5e8]:
+    times = []
+    r = range(500, int(1e6), 500)
+    for goal in r:
+        print(goal)
         game = Game()
-        print(game.solve(goal))
+        times.append(game.solve(goal))
+    plt.plot(list(r), times)
+    plt.show()
+    # for goal in [500, 5000, 50000, 5e8]:
+    #     game = Game()
+    #     print(game.ghost_solve(goal))
 
 
 if __name__ == "__main__":
