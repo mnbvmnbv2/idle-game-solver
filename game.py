@@ -33,12 +33,12 @@ class Resource:
 
 class Game:
     def __init__(self) -> None:
-        self.start_money = 200.0
+        self.start_money = 150.0
         self.money = self.start_money
         self.income_mult = 1
         self.resources = [
             Resource(price=4, cost_mult=1.07, cost_increase_step=0, income=3),
-            Resource(price=300, cost_mult=1.15, cost_increase_step=0, income=300),
+            Resource(price=200, cost_mult=1.15, cost_increase_step=0, income=200),
             Resource(price=6, cost_mult=1.25, cost_increase_step=0, income=5),
         ]
         self.step_ = 0
@@ -110,7 +110,7 @@ class Game:
             # print(no_cash)
             if no_cash:
                 next_worth = break_even_times[next_candidate] < self.time_untill(
-                    self.costs[next_candidate] + self.costs[next_candidate]
+                    self.costs[curr_candidate] + self.costs[next_candidate]
                 )
                 if not next_worth:
                     return -1
@@ -123,13 +123,13 @@ class Game:
             return -1
         return curr_candidate
 
-    def solve(self, goal):
+    def solve(self, goal, verbose=False):
         while self.money < goal:
             pretime = self.time_untill(goal)
             bought = self.buy(self.optimal_play(goal))
             while bought:
                 bought = self.buy(self.optimal_play(goal))
-            self.step(goal)
+            self.step(goal, verbose)
             posttime = self.time_untill(goal)
             assert posttime < pretime - 0.99
             # time.sleep(0.1)
@@ -149,8 +149,12 @@ class Game:
         self.reset()
         self.income_mult = new_mult
 
+    # def get_optimal_ascend(self):
+
 
 def main():
+    # game = Game()
+    # game.solve(5000, verbose=True)
     for goal in [5000, 50000, 5e8]:
         game = Game()
         print(game.solve(goal))
