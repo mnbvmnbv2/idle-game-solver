@@ -8,6 +8,7 @@ class Resource:
         self.quantity = 0
         # price data
         self._price = price
+        self._initial_price = price
         self._cost_mult = cost_mult
         self._cost_increase_step = cost_increase_step
         #
@@ -19,6 +20,10 @@ class Resource:
 
     def get_break_even(self):
         return self._price / self._one_income
+
+    def reset(self):
+        self.quantity = 0
+        self._price = self._initial_price
 
     @property
     def income(self):
@@ -127,25 +132,33 @@ class Game:
 
     def solve(self, goal, verbose=False):
         # goal_mult = self.get_ascend_value(goal)
-        time_untill_goal = self.ghost_solve(goal, self.income_mult)
+        time_untill_goal, _ = self.ghost_solve(goal, self.income_mult)
         # check if faster with ascend some intervals along the way
         if goal > self.ascend_equilibrium:
-            interval_points = [goal * 0.03, goal * 0.06, goal * 0.1]
+            interval_points = [
+                # goal * 0.01,
+                goal * 0.03,
+                goal * 0.06,
+                goal * 0.1,
+                # goal * 0.15,
+            ]
             # print(interval_points)
             ascend_times = []
-            print(time_untill_goal)
+            # print(time_untill_goal)
             for interval_point in interval_points:
                 # to_ascend = self.solve(interval_point)
-                to_ascend = self.ghost_solve(interval_point, self.income_mult)
-                from_ascend = self.ghost_solve(
-                    goal, self.get_ascend_value(interval_point)
+                to_ascend, ghost_money = self.ghost_solve(
+                    interval_point, self.income_mult
                 )
-                print(
-                    f"To ascend {to_ascend}, from ascend {from_ascend}, ascend val {self.get_ascend_value(interval_point)}"
+                from_ascend, _ = self.ghost_solve(
+                    goal, self.get_ascend_value(ghost_money)
                 )
+                # print(
+                #     f"To ascend {to_ascend}, from ascend {from_ascend}, ascend val {self.get_ascend_value(interval_point)}"
+                # )
                 ascend_times.append(to_ascend + from_ascend)
-            print(f"ascend times {ascend_times}")
-            print(f"Ascend values {interval_points}")
+            # print(f"ascend times {ascend_times}")
+            # print(f"Ascend values {interval_points}")
             if min(ascend_times) < time_untill_goal:
                 self.solve(interval_points[np.argmin(ascend_times)])
                 self.ascend()
@@ -170,20 +183,20 @@ class Game:
         ghost_game = self.__class__()
         ghost_game.reset()
         ghost_game.income_mult = mult
-        return ghost_game.non_ascend_solve(goal)
+        return ghost_game.non_ascend_solve(goal), ghost_game.money
 
     def reset(self):
         for r in self.resources:
-            r.quantity = 0
+            r.reset()
         self.money = self.start_money
         self.income_mult = 1
 
     def ascend(self):
-        print(f"Ascended at {self.step_}:{self.money}")
+        # print(f"Ascended at {self.step_}:{self.money}")
         new_mult = self.get_ascend_value(self.money)
         self.reset()
         self.income_mult = new_mult
-        print(f"Now has mult {self.income_mult}")
+        # print(f"Now has mult {self.income_mult}")
 
     def get_ascend_value(self, money):
         if money > self.ascend_equilibrium:
@@ -195,14 +208,14 @@ class Game:
 
 def main():
     # game = Game()
-    # game.solve(994493, verbose=True)
+    # game.solve(365719, verbose=True)
     times = []
     r = range(500, int(1e6), 5003)
     for goal in r:
         print(goal)
         game = Game()
         solved_time = game.solve(goal)
-        print("s", solved_time)
+        # print("s", solved_time)
         times.append(solved_time)
     plt.plot(list(r), times)
     plt.show()
