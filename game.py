@@ -2,6 +2,7 @@ import sys
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+import time
 
 
 sys.setrecursionlimit(100000)
@@ -216,34 +217,9 @@ class Game:
         ghost_game.income_mult = mult
         return ghost_game.non_ascend_solve(goal), ghost_game.money
 
-    def solve_old(self, goal, verbose=False):
-        time_untill_goal, _ = self.ghost_solve(goal, self.income_mult)
-        # check if faster with ascend some intervals along the way
-        if goal > self.ascend_equilibrium:
-            interval_points = [
-                goal * 0.03,
-                goal * 0.06,
-                goal * 0.1,
-            ]
-            ascend_times = []
-            for interval_point in interval_points:
-                to_ascend, ghost_money = self.ghost_solve(
-                    interval_point, self.income_mult
-                )
-                from_ascend, _ = self.ghost_solve(
-                    goal, self.get_ascend_value(ghost_money)
-                )
-                ascend_times.append(to_ascend + from_ascend)
-            if min(ascend_times) < time_untill_goal:
-                self.solve_old(interval_points[np.argmin(ascend_times)])
-                self.ascend()
-
-        return self.non_ascend_solve(goal, verbose)
-
     def solve(self, goal: float, limit: float | None = None) -> float:
         """Returns the time it takes to reach the goal"""
         time_untill_goal = self.non_ascend_solve(goal)
-        # print(f"{time_untill_goal=}, {goal=}")
         if time_untill_goal <= 1:
             return time_untill_goal
         if limit and time_untill_goal > limit:
@@ -252,10 +228,11 @@ class Game:
         if goal > self.ascend_equilibrium:
             viable_ascends = []
             # find if any point before goal is reached with current multiplier is worth ascending
-            for i in range(1, math.floor(time_untill_goal)):
+            # -1 because we don't bother checking if it is possible to reach with a limit of 1 step
+            for i in range(1, math.floor(time_untill_goal) - 1):
                 money = self.max_reachable_in(i, self.income_mult)
                 mult_at_i = self.get_ascend_value(money)
-                if mult_at_i < 1.1:
+                if mult_at_i < self.income_mult * 1.1:
                     continue
                 ghost_game = self.__class__()
                 ghost_game.reset()
@@ -265,8 +242,8 @@ class Game:
                 if steps_used_on_rest + i < time_untill_goal:
                     viable_ascends.append((steps_used_on_rest + i, i, money))
             # sort by time used
-            viable_ascends.sort(key=lambda x: x[0])
             if viable_ascends:
+                viable_ascends.sort(key=lambda x: x[0])
                 return viable_ascends[0][0]
 
         # if not worth ascending
@@ -275,18 +252,23 @@ class Game:
 
 def main():
     # Normal
-    # game = Game()
-    # game.solve(365719, verbose=True)
+    pre = time.monotonic()
+    game = Game()
+    sol = game.solve(16571000)
+    print(sol)
+    post = time.monotonic()
+    print(post - pre)
+    print(counts)
 
-    times = []
-    goals = range(500, int(5e5), 50003)
-    for goal in goals:
-        print(goal)
-        game = Game()
-        solved_time = game.solve(goal)
-        times.append(solved_time)
-    plt.plot(list(goals), times, label="Time")
-    plt.show()
+    # times = []
+    # goals = range(500, int(5e5), 50003)
+    # for goal in goals:
+    #     print(goal)
+    #     game = Game()
+    #     solved_time = game.solve(goal)
+    #     times.append(solved_time)
+    # plt.plot(list(goals), times, label="Time")
+    # plt.show()
 
 
 if __name__ == "__main__":
