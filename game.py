@@ -7,6 +7,11 @@ import time
 
 sys.setrecursionlimit(100000)
 
+list_of_solves = []
+dict_solved = {}
+viable_ascend_list = []
+best_time = float("inf")
+
 
 class Resource:
     def __init__(self, price, cost_mult, cost_increase_step, income) -> None:
@@ -214,34 +219,48 @@ class Game:
         ghost_game.reset(mult)
         return ghost_game.non_ascend_solve(goal), ghost_game.money
 
-    def solve(self, goal: float, limit: float | None = None) -> float:
+    def check_best_time(self, time_: float) -> None:
+        global best_time
+        if time_ < best_time:
+            best_time = time_
+
+    def solve(
+        self, goal: float, start_time: float, limit: float | None = None
+    ) -> float:
         """Returns the time it takes to reach the goal"""
         time_untill_goal, _ = self.ghost_solve(goal, self.income_mult)
-        if time_untill_goal <= 1:
-            return time_untill_goal
-        if limit and time_untill_goal > limit:
-            return time_untill_goal
         # check if faster with ascend some intervals along the way
         if goal > self.ascend_equilibrium:
             viable_ascends = []
             # find if any point before goal is reached with current multiplier is worth ascending
-            # -1 because we don't bother checking if it is possible to reach with a limit of 1 step
-            for i in range(1, math.floor(time_untill_goal) - 1):
+            # we don't bother checking if it is possible to reach with a limit of 1 step
+            ghost_end = math.floor(time_untill_goal) - 2
+            after_best = best_time - start_time - 1
+            end = ghost_end if ghost_end < after_best else int(after_best)
+            for i in range(end, 1, -1):
                 money = self.max_reachable_in(i, self.income_mult)
                 mult_at_i = self.get_ascend_value(money)
                 if mult_at_i < self.income_mult * 1.1:
-                    continue
+                    break
+                ghost_limit = time_untill_goal - i
                 ghost_game = self.__class__()
                 ghost_game.reset(mult_at_i)
-                steps_used_on_rest = ghost_game.solve(goal, time_untill_goal - i)
+                steps_used_on_rest = ghost_game.solve(goal, start_time + i, ghost_limit)
+                # if ghost_limit not in dict_solved:
+                #     dict_solved[ghost_limit] = []
                 # if ascending is worth it
                 if steps_used_on_rest + i < time_untill_goal:
                     viable_ascends.append((steps_used_on_rest + i, i, money))
+                    # dict_solved[ghost_limit].append(
+                    #     (self.income_mult, start_time, steps_used_on_rest)
+                    # )
             # sort by time used
             if viable_ascends:
                 viable_ascends.sort(key=lambda x: x[0])
+                # viable_ascend_list.append(viable_ascends)
                 return viable_ascends[0][0]
 
+        self.check_best_time(start_time + time_untill_goal)
         # if not worth ascending
         return time_untill_goal
 
@@ -250,17 +269,34 @@ def main():
     # Normal
     pre = time.monotonic()
     game = Game()
-    sol = game.solve(1657100)
+    sol = game.solve(1657100, 0)
     print(sol)
     post = time.monotonic()
     print(post - pre)
+    for k, vs in dict_solved.items():
+        for v in vs:
+            list_of_solves.append((k, v[0], v[1], v[2]))
+    # for v in viable_ascend_list:
+    #     print(v)
+    #     print()
+    # print(len(list_of_solves))
+    # print(dict_solved)
+    # plt.scatter(
+    #     [x[2] for x in list_of_solves],
+    #     [x[3] for x in list_of_solves],
+    #     c=[x[1] for x in list_of_solves],
+    # )
+    # plt.colorbar()
+    # plt.xlabel("Start Time")
+    # plt.ylabel("Steps on rest")
+    # plt.show()
 
     # times = []
-    # goals = range(500, int(5e5), 50003)
+    # goals = range(500, int(5e5), 5003)
     # for goal in goals:
     #     print(goal)
     #     game = Game()
-    #     solved_time = game.solve(goal)
+    #     solved_time = game.solve(goal, 0)
     #     times.append(solved_time)
     # plt.plot(list(goals), times, label="Time")
     # plt.show()
