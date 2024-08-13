@@ -108,16 +108,15 @@ class Game:
         adjusted_target = goal - self.money
         return adjusted_target / self.income
 
-    def reset(self) -> None:
+    def reset(self, income_mult: float = 1.0) -> None:
         for r in self.resources:
             r.reset()
         self.money = self.start_money
-        self.income_mult = 1.0
+        self.income_mult = income_mult
 
     def ascend(self) -> None:
         new_mult = self.get_ascend_value(self.money)
-        self.reset()
-        self.income_mult = new_mult
+        self.reset(new_mult)
 
     def get_ascend_value(self, money: float) -> float:
         if money > self.ascend_equilibrium:
@@ -162,8 +161,7 @@ class Game:
     def max_reachable_in(self, steps: int, mult: float = 1.0) -> float:
         """Using similar logic to optimal play"""
         ghost_game = self.__class__()
-        ghost_game.reset()
-        ghost_game.income_mult = mult
+        ghost_game.reset(mult)
 
         steps_left = steps
         while steps_left > 0:
@@ -213,13 +211,12 @@ class Game:
 
     def ghost_solve(self, goal: float, mult: float = 1.0) -> tuple[int, float]:
         ghost_game = self.__class__()
-        ghost_game.reset()
-        ghost_game.income_mult = mult
+        ghost_game.reset(mult)
         return ghost_game.non_ascend_solve(goal), ghost_game.money
 
     def solve(self, goal: float, limit: float | None = None) -> float:
         """Returns the time it takes to reach the goal"""
-        time_untill_goal = self.non_ascend_solve(goal)
+        time_untill_goal, _ = self.ghost_solve(goal, self.income_mult)
         if time_untill_goal <= 1:
             return time_untill_goal
         if limit and time_untill_goal > limit:
@@ -235,8 +232,7 @@ class Game:
                 if mult_at_i < self.income_mult * 1.1:
                     continue
                 ghost_game = self.__class__()
-                ghost_game.reset()
-                ghost_game.income_mult = mult_at_i
+                ghost_game.reset(mult_at_i)
                 steps_used_on_rest = ghost_game.solve(goal, time_untill_goal - i)
                 # if ascending is worth it
                 if steps_used_on_rest + i < time_untill_goal:
@@ -254,11 +250,10 @@ def main():
     # Normal
     pre = time.monotonic()
     game = Game()
-    sol = game.solve(16571000)
+    sol = game.solve(1657100)
     print(sol)
     post = time.monotonic()
     print(post - pre)
-    print(counts)
 
     # times = []
     # goals = range(500, int(5e5), 50003)
