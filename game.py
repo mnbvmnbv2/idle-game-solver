@@ -87,25 +87,19 @@ class Game:
             return True
         return False
 
-    def get_da_cash(self) -> None:
-        self.money += self.income
-
     def step(self, goal: float | None = None, verbose: bool = False) -> None:
-        self.get_da_cash()
+        self.money += self.income
         self.step_ += 1
         if verbose:
-            self.print_step(goal)
-
-    def print_step(self, goal: float | None):
-        untill_goal = f"Untill Goal: {self.time_untill(goal)}" if goal else ""
-        print(
-            f"Step: {self.step_:03}, "
-            f"Money: {self.money:.6}, "
-            f"Owned: {self.owned}, "
-            f"Income: {self.income}, "
-            f"Costs: {self.costs}, ",
-            untill_goal,
-        )
+            untill_goal = f"Untill Goal: {self.time_untill(goal)}" if goal else ""
+            print(
+                f"Step: {self.step_:03}, "
+                f"Money: {self.money:.6}, "
+                f"Owned: {self.owned}, "
+                f"Income: {self.income}, "
+                f"Costs: {self.costs}, ",
+                untill_goal,
+            )
 
     def time_untill(self, goal: float) -> float:
         if self.income == 0:
@@ -121,7 +115,10 @@ class Game:
 
     def ascend(self) -> None:
         new_mult = self.get_ascend_value(self.money)
-        self.reset(new_mult)
+        if new_mult > self.income_mult:
+            self.reset(new_mult)
+        else:
+            self.reset(self.income_mult)
 
     def get_ascend_value(self, money: float) -> float:
         if money > self.ascend_equilibrium:
