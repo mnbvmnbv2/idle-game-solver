@@ -220,6 +220,7 @@ def max_reachable_in(steps: int, mult: float = 1.0) -> float:
 
             # iterate over the fastest break even buys
             for curr_candidate, next_candidate in zip(best_buys, best_buys[1:]):
+                next_worth = False
                 if break_even_times[curr_candidate] > steps_left:
                     buying = False
                     break
@@ -227,18 +228,21 @@ def max_reachable_in(steps: int, mult: float = 1.0) -> float:
                 if can_buy:
                     break
                 if not can_buy:
-                    should_wait = break_even_times[next_candidate] > steps_left
-                    roi_within_this_candidate = break_even_times[
+                    # roi within this candidate
+                    next_worth = break_even_times[
                         next_candidate
                     ] < ghost_game.time_untill(
                         ghost_game.costs[curr_candidate]
                         + ghost_game.costs[next_candidate]
                     )
-                    next_worth = not should_wait and roi_within_this_candidate
                     if not next_worth:
                         buying = False
                     if next_worth:
                         continue
+            # check if loop finished and next_worth (we should buy last candidate)
+            # this is due to zip loop ending before we can check the last candidate
+            if curr_candidate == best_buys[-2] and next_worth:
+                curr_candidate = best_buys[-1]
             if not can_buy:
                 buying = False
             if buying:
@@ -255,12 +259,18 @@ def ghost_solve(goal: float, mult: float = 1.0) -> tuple[int, float]:
 
 def main():
     # Normal
+    solutions = []
     pre = time.monotonic()
-    game = Game()
-    sol = game.solve(1657100, 0)
-    print(sol)
+    for i in range(1, 100):
+        game = Game()
+        sol = game.solve(1657 * i, 0)
+        solutions.append(sol)
     post = time.monotonic()
     print(post - pre)
+
+    # plot
+    plt.plot(solutions)
+    plt.show()
 
 
 if __name__ == "__main__":
