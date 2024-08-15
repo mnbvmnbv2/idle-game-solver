@@ -226,10 +226,10 @@ class Game:
             viable_ascends = []
             # find if any point before goal is reached with current multiplier is worth ascending
             # we don't bother checking if it is possible to reach with a limit of 1 step
-            ghost_end = math.floor(time_untill_goal) - 2
-            after_best = best_time - start_time - 1
-            end = ghost_end if ghost_end < after_best else int(after_best)
+            end = math.floor(time_untill_goal) - 2
             for i in range(end, 1, -1):
+                if best_time - start_time - 1 < i:
+                    continue
                 money = self.max_reachable_in(i, self.income_mult)
                 mult_at_i = self.get_ascend_value(money)
                 if mult_at_i < self.income_mult * 1.1:
