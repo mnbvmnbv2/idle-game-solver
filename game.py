@@ -53,7 +53,7 @@ class Game:
             Resource(price=6.0, cost_mult=1.25, cost_increase_step=0, income=5),
         ]
         self.step_ = 0
-        self.ascend_equilibrium = 500.0
+        self.ascend_equilibrium = 2000.0
 
     @property
     def income(self) -> float:
@@ -149,6 +149,8 @@ class Game:
             if not no_cash:
                 break
 
+        if curr_candidate == best_buys[-2] and next_worth:
+            curr_candidate = best_buys[-1]
         if no_cash:
             return -1
         return curr_candidate
