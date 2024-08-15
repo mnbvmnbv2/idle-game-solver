@@ -7,11 +7,6 @@ import time
 
 sys.setrecursionlimit(100000)
 
-list_of_solves = []
-dict_solved = {}
-viable_ascend_list = []
-best_time = float("inf")
-
 
 class Resource:
     def __init__(self, price, cost_mult, cost_increase_step, income) -> None:
@@ -211,13 +206,8 @@ class Game:
             assert posttime < pretime - 0.99
         return self.step_
 
-    def check_best_time(self, time_: float) -> None:
-        global best_time
-        if time_ < best_time:
-            best_time = time_
-
     def solve(
-        self, goal: float, start_time: float, limit: float | None = None
+        self, goal: float, start_time: float, best_time: float = float("inf")
     ) -> float:
         """Returns the time it takes to reach the goal"""
         time_untill_goal, _ = ghost_solve(goal, self.income_mult)
@@ -230,7 +220,7 @@ class Game:
             # check in reverse order so we can break once we reach non viable ascends
             for i in range(end, 1, -1):
                 # skip if not worth ascending as the the is too late
-                # added this in loop for ease of udnerstanding rather than checking before loop
+                # added this in loop for ease of understanding rather than checking before loop
                 if best_time - start_time - 1 < i:
                     continue
                 money = self.max_reachable_in(i, self.income_mult)
@@ -239,20 +229,21 @@ class Game:
                 if mult_at_i < self.income_mult * 1.1:
                     break
                 # recursively check if ascending is worth it
-                ghost_limit = time_untill_goal - i
                 ghost_game = self.__class__()
                 ghost_game.reset(mult_at_i)
-                steps_used_on_rest = ghost_game.solve(goal, start_time + i, ghost_limit)
+                steps_used_on_rest = ghost_game.solve(goal, start_time + i, best_time)
                 # if ascending is worth it we add to candidate list
                 if steps_used_on_rest + i < time_untill_goal:
                     viable_ascends.append((steps_used_on_rest + i, i, money))
+                # update best time
+                if (new_time := start_time + i + steps_used_on_rest) < best_time:
+                    best_time = new_time
             # sort by time used
             if viable_ascends:
                 viable_ascends.sort(key=lambda x: x[0])
                 # viable_ascend_list.append(viable_ascends)
                 return viable_ascends[0][0]
 
-        self.check_best_time(start_time + time_untill_goal)
         # if not worth ascending we return the time it took to reach the goal
         return time_untill_goal
 
@@ -271,9 +262,6 @@ def main():
     print(sol)
     post = time.monotonic()
     print(post - pre)
-    for k, vs in dict_solved.items():
-        for v in vs:
-            list_of_solves.append((k, v[0], v[1], v[2]))
     # for v in viable_ascend_list:
     #     print(v)
     #     print()
