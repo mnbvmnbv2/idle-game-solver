@@ -211,11 +211,6 @@ class Game:
             assert posttime < pretime - 0.99
         return self.step_
 
-    def ghost_solve(self, goal: float, mult: float = 1.0) -> tuple[int, float]:
-        ghost_game = self.__class__()
-        ghost_game.reset(mult)
-        return ghost_game.non_ascend_solve(goal), ghost_game.money
-
     def check_best_time(self, time_: float) -> None:
         global best_time
         if time_ < best_time:
@@ -225,7 +220,7 @@ class Game:
         self, goal: float, start_time: float, limit: float | None = None
     ) -> float:
         """Returns the time it takes to reach the goal"""
-        time_untill_goal, _ = self.ghost_solve(goal, self.income_mult)
+        time_untill_goal, _ = ghost_solve(goal, self.income_mult)
         # check if faster with ascend some intervals along the way
         if goal > self.ascend_equilibrium:
             viable_ascends = []
@@ -260,6 +255,12 @@ class Game:
         self.check_best_time(start_time + time_untill_goal)
         # if not worth ascending
         return time_untill_goal
+
+
+def ghost_solve(goal: float, mult: float = 1.0) -> tuple[int, float]:
+    ghost_game = Game()
+    ghost_game.reset(mult)
+    return ghost_game.non_ascend_solve(goal), ghost_game.money
 
 
 def main():
