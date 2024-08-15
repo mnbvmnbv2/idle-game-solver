@@ -127,8 +127,6 @@ class Game:
         of a worse roi resource if it "fits" into the current budget.
 
         NOTE 2: Could return -2 if it is worth to wait and then skip calling this function in the main loop.
-
-        NOTE 3: Need to check if worth waiting untill goal is also not optimal.
         """
         break_even_times = self.get_break_even_times()
         best_buys = np.argsort(break_even_times)
@@ -189,7 +187,7 @@ class Game:
                     break
                 # recursively check if ascending is worth it
                 ghost_game = self.__class__()
-                ghost_game.reset(mult_at_i)
+                ghost_game.income_mult = mult_at_i
                 steps_used_on_rest = ghost_game.solve(goal, start_time + i, best_time)
                 # if ascending is worth it we add to candidate list
                 if steps_used_on_rest + i < time_untill_goal:
