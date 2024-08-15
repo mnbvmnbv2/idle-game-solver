@@ -227,25 +227,25 @@ class Game:
             # find if any point before goal is reached with current multiplier is worth ascending
             # we don't bother checking if it is possible to reach with a limit of 1 step
             end = math.floor(time_untill_goal) - 2
+            # check in reverse order so we can break once we reach non viable ascends
             for i in range(end, 1, -1):
+                # skip if not worth ascending as the the is too late
+                # added this in loop for ease of udnerstanding rather than checking before loop
                 if best_time - start_time - 1 < i:
                     continue
                 money = self.max_reachable_in(i, self.income_mult)
                 mult_at_i = self.get_ascend_value(money)
+                # if we don't gain substancially from ascending
                 if mult_at_i < self.income_mult * 1.1:
                     break
+                # recursively check if ascending is worth it
                 ghost_limit = time_untill_goal - i
                 ghost_game = self.__class__()
                 ghost_game.reset(mult_at_i)
                 steps_used_on_rest = ghost_game.solve(goal, start_time + i, ghost_limit)
-                # if ghost_limit not in dict_solved:
-                #     dict_solved[ghost_limit] = []
-                # if ascending is worth it
+                # if ascending is worth it we add to candidate list
                 if steps_used_on_rest + i < time_untill_goal:
                     viable_ascends.append((steps_used_on_rest + i, i, money))
-                    # dict_solved[ghost_limit].append(
-                    #     (self.income_mult, start_time, steps_used_on_rest)
-                    # )
             # sort by time used
             if viable_ascends:
                 viable_ascends.sort(key=lambda x: x[0])
@@ -253,7 +253,7 @@ class Game:
                 return viable_ascends[0][0]
 
         self.check_best_time(start_time + time_untill_goal)
-        # if not worth ascending
+        # if not worth ascending we return the time it took to reach the goal
         return time_untill_goal
 
 
