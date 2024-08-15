@@ -155,47 +155,6 @@ class Game:
             return -1
         return curr_candidate
 
-    def max_reachable_in(self, steps: int, mult: float = 1.0) -> float:
-        """Using similar logic to optimal play"""
-        ghost_game = self.__class__()
-        ghost_game.reset(mult)
-
-        steps_left = steps
-        while steps_left > 0:
-            buying = True
-            while buying:
-                break_even_times = ghost_game.get_break_even_times()
-                best_buys = np.argsort(break_even_times)
-
-                # iterate over the fastest break even buys
-                for curr_candidate, next_candidate in zip(best_buys, best_buys[1:]):
-                    if break_even_times[curr_candidate] > steps_left:
-                        buying = False
-                        break
-                    no_cash = ghost_game.costs[curr_candidate] > ghost_game.money
-                    if no_cash:
-                        should_wait = break_even_times[next_candidate] > steps_left
-                        roi_within_this_candidate = break_even_times[
-                            next_candidate
-                        ] < ghost_game.time_untill(
-                            ghost_game.costs[curr_candidate]
-                            + ghost_game.costs[next_candidate]
-                        )
-                        next_worth = not should_wait and roi_within_this_candidate
-                        if not next_worth:
-                            buying = False
-                        if next_worth:
-                            continue
-                    if not no_cash:
-                        break
-                if no_cash:
-                    buying = False
-                if buying:
-                    buying = ghost_game.buy(curr_candidate)
-            ghost_game.step()
-            steps_left -= 1
-        return ghost_game.money
-
     def non_ascend_solve(self, goal: float, verbose: bool = False) -> int:
         while self.money < goal:
             pretime = self.time_untill(goal)
@@ -223,7 +182,7 @@ class Game:
                 # added this in loop for ease of understanding rather than checking before loop
                 if best_time - start_time - 1 < i:
                     continue
-                money = self.max_reachable_in(i, self.income_mult)
+                money = max_reachable_in(i, self.income_mult)
                 mult_at_i = self.get_ascend_value(money)
                 # if we don't gain substancially from ascending
                 if mult_at_i < self.income_mult * 1.1:
@@ -248,6 +207,46 @@ class Game:
         return time_untill_goal
 
 
+def max_reachable_in(steps: int, mult: float = 1.0) -> float:
+    """Using similar logic to optimal play"""
+    ghost_game = Game()
+    ghost_game.income_mult = mult
+
+    for steps_left in range(steps, 0, -1):
+        buying = True
+        while buying:
+            break_even_times = ghost_game.get_break_even_times()
+            best_buys = np.argsort(break_even_times)
+
+            # iterate over the fastest break even buys
+            for curr_candidate, next_candidate in zip(best_buys, best_buys[1:]):
+                if break_even_times[curr_candidate] > steps_left:
+                    buying = False
+                    break
+                no_cash = ghost_game.costs[curr_candidate] > ghost_game.money
+                if no_cash:
+                    should_wait = break_even_times[next_candidate] > steps_left
+                    roi_within_this_candidate = break_even_times[
+                        next_candidate
+                    ] < ghost_game.time_untill(
+                        ghost_game.costs[curr_candidate]
+                        + ghost_game.costs[next_candidate]
+                    )
+                    next_worth = not should_wait and roi_within_this_candidate
+                    if not next_worth:
+                        buying = False
+                    if next_worth:
+                        continue
+                if not no_cash:
+                    break
+            if no_cash:
+                buying = False
+            if buying:
+                buying = ghost_game.buy(curr_candidate)
+        ghost_game.step()
+    return ghost_game.money
+
+
 def ghost_solve(goal: float, mult: float = 1.0) -> tuple[int, float]:
     ghost_game = Game()
     ghost_game.reset(mult)
@@ -262,30 +261,6 @@ def main():
     print(sol)
     post = time.monotonic()
     print(post - pre)
-    # for v in viable_ascend_list:
-    #     print(v)
-    #     print()
-    # print(len(list_of_solves))
-    # print(dict_solved)
-    # plt.scatter(
-    #     [x[2] for x in list_of_solves],
-    #     [x[3] for x in list_of_solves],
-    #     c=[x[1] for x in list_of_solves],
-    # )
-    # plt.colorbar()
-    # plt.xlabel("Start Time")
-    # plt.ylabel("Steps on rest")
-    # plt.show()
-
-    # times = []
-    # goals = range(500, int(5e5), 5003)
-    # for goal in goals:
-    #     print(goal)
-    #     game = Game()
-    #     solved_time = game.solve(goal, 0)
-    #     times.append(solved_time)
-    # plt.plot(list(goals), times, label="Time")
-    # plt.show()
 
 
 if __name__ == "__main__":
