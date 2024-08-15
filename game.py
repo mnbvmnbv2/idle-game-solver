@@ -223,8 +223,10 @@ def max_reachable_in(steps: int, mult: float = 1.0) -> float:
                 if break_even_times[curr_candidate] > steps_left:
                     buying = False
                     break
-                no_cash = ghost_game.costs[curr_candidate] > ghost_game.money
-                if no_cash:
+                can_buy = ghost_game.costs[curr_candidate] <= ghost_game.money
+                if can_buy:
+                    break
+                if not can_buy:
                     should_wait = break_even_times[next_candidate] > steps_left
                     roi_within_this_candidate = break_even_times[
                         next_candidate
@@ -237,9 +239,7 @@ def max_reachable_in(steps: int, mult: float = 1.0) -> float:
                         buying = False
                     if next_worth:
                         continue
-                if not no_cash:
-                    break
-            if no_cash:
+            if not can_buy:
                 buying = False
             if buying:
                 buying = ghost_game.buy(curr_candidate)
