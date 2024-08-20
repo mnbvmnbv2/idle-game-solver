@@ -77,7 +77,7 @@ end
 function step(self::Game)
     self.money += income(self)
     self.step += 1
-    if self.step % 10000 == 0
+    if self.step % 100000 == 0
         println("Step: ",self.step,", Money: ",self.money,", Income: ",income(self),", Owned: ",owned(self),", Costs: ",costs(self))
     end
 end

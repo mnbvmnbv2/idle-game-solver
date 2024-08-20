@@ -85,16 +85,17 @@ class Game:
     def step(self, goal: float | None = None, verbose: bool = False) -> None:
         self.money += self.income
         self.step_ += 1
-        if verbose:
-            untill_goal = f"Untill Goal: {self.time_untill(goal)}" if goal else ""
-            print(
-                f"Step: {self.step_:03}, "
-                f"Money: {self.money:.6}, "
-                f"Owned: {self.owned}, "
-                f"Income: {self.income}, "
-                f"Costs: {self.costs}, ",
-                untill_goal,
-            )
+        if self.step_ % 100000 == 0:
+            if verbose:
+                untill_goal = f"Untill Goal: {self.time_untill(goal)}" if goal else ""
+                print(
+                    f"Step: {self.step_:03}, "
+                    f"Money: {self.money:.6}, "
+                    f"Owned: {self.owned}, "
+                    f"Income: {self.income}, "
+                    f"Costs: {self.costs}, ",
+                    untill_goal,
+                )
 
     def time_untill(self, goal: float) -> float:
         if self.income == 0:
@@ -273,5 +274,13 @@ def main():
     plt.show()
 
 
+def speed():
+    pre = time.monotonic()
+    game = Game()
+    game.non_ascend_solve(2000012784500, verbose=True)
+    post = time.monotonic()
+    print(post - pre)
+
+
 if __name__ == "__main__":
-    main()
+    speed()
