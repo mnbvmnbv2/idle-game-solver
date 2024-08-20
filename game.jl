@@ -7,7 +7,7 @@ mutable struct Resource
     one_income::Float64
 
     function Resource(price, cost_mult, cost_increase_step, income)
-        new(0, price, cost_mult, cost_increase_step, income, income)
+        new(0, price, price, cost_mult, cost_increase_step, income)
     end
 end
 
@@ -77,7 +77,9 @@ end
 function step(self::Game)
     self.money += income(self)
     self.step += 1
-    println("Step: ",self.step,", Money: ",self.money,", Income: ",income(self),", Owned: ",owned(self),", Costs: ",costs(self))
+    if self.step % 10000 == 0
+        println("Step: ",self.step,", Money: ",self.money,", Income: ",income(self),", Owned: ",owned(self),", Costs: ",costs(self))
+    end
 end
 
 function time_untill(self::Game, goal::Float64)
@@ -149,7 +151,7 @@ end
 
 function main()
     game = Game(150.0, 1.0)
-    done_step = non_ascend_solve(game, 20000.0)
+    done_step = non_ascend_solve(game, 2000012784500.0)
     println("Done ", done_step)
 end
 
