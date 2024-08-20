@@ -12,21 +12,17 @@ mutable struct Resource
 end
 
 mutable struct Game
-    self.money = 150.0
-    self.income_mult = 1.0
-    self.resources = [
-        Resource(4.0, 1.07, 0, 3),
-        Resource(200.0, 1.15, 0, 200),
-        Resource(6.0, 1.25, 0, 5),
-    ]
-    self.step = 0
-    self.ascend_equilibrium = 2000.0
+    money::Float64
+    income_mult::Float64
+    resources::Array{Resource}
+    step::Int
+    ascend_equilibrium::Float64
 
     function Game(money, income_mlt)
-        new(0, money, income_mlt, [
+        new(money, income_mlt, [
             Resource(4.0, 1.07, 0, 3),
             Resource(200.0, 1.15, 0, 200),
-            Resource(6.0, 1.25, 0, 5),
+            Resource(6.0, 1.25, 0, 5)
         ], 0, 2000.0)
     end
 end
@@ -48,11 +44,6 @@ function get_break_even(self::Resource)
     return self.price / self.one_income
 end
 
-function reset(self::Resource)
-    self.quantity = 0
-    self.price = self.initial_price
-end
-
 function display_info(self::Resource)
     println("Resource(", self.quantity, ", ", self.price, ", ", self.one_income, ")")
 end
@@ -71,41 +62,91 @@ function get_break_even_times(self::Game)
     ]
 end
 
-function buy(self::Game, idx::int)
-    if idx == -1:
+function buy(self::Game, idx::Int)
+    if idx == -1
         return False
-    if self.money >= self.resources[idx].price:
+    end
+    if self.money >= self.resources[idx].price
         self.money -= self.resources[idx].price
         self.resources[idx].buy_one()
         return True
+    end
     return False
 end
 
-function step(self::Game, goal::float = None, verbose::bool = False)
+function step(self::Game)
     self.money += self.income
     self.step_ += 1
-    if verbose:
-        untill_goal = f"Untill Goal: {self.time_untill(goal)}" if goal else ""
-        print(
-            f"Step: {self.step_:03}, "
-            f"Money: {self.money:.6}, "
-            f"Owned: {self.owned}, "
-            f"Income: {self.income}, "
-            f"Costs: {self.costs}, ",
-            untill_goal,
-        )
+    println("Step: ",self.step_,"Money: ",self.money,"Income: ",self.income,"Owned: ",self.owned,"Costs: ",self.costs)
 end
 
-function time_untill(self::Game, goal: float)
-    if self.income == 0:
+function time_untill(self::Game, goal::Float64)
+    if self.income == 0
         return float("inf")
+    end
     adjusted_target = goal - self.money
     return adjusted_target / self.income
 end
 
-function reset(self::Game, income_mult: float = 1.0)
-    for r in self.resources:
+function reset(self::Game, income_mult::Float64 = 1.0)
+    for r in self.resources
         r.reset()
+    end
     self.money = self.start_money
     self.income_mult = income_mult
 end
+
+function optimal_play(self::Game, goal::Float64)
+    break_even_times = get_break_even_times(self)
+    best_buys = argsort(break_even_times)
+    worth_waiting_until_goal = break_even_times[best_buys[0]] > time_untill(self, goal)
+    if worth_waiting_until_goal
+        return -1
+    end
+    # iterate over the fastest break even buys
+    num_candidates = len(best_buys)
+    for i in num_candidates - 1
+        curr_candidate = best_buys[i]
+        next_candidate = best_buys[i + 1]
+        no_cash = self.costs[curr_candidate] > self.money
+        if no_cash
+            enough_next_plus_this= self.costs[curr_candidate] + self.costs[next_candidate]
+            next_worth = break_even_times[next_candidate] < time_untill(self, enough_next_plus_this)
+            if not next_worth
+                return -1
+            end
+            if next_worth
+                continue
+            end
+        end
+        if !no_cash
+            break
+        end
+    end
+
+    if curr_candidate == best_buys[-2] && next_worth
+        curr_candidate = best_buys[-1]
+    end
+    if no_cash
+        return -1
+    end
+    return curr_candidate
+end
+
+function non_ascend_solve(self::Game, goal::Float64)
+    while self.money < goal
+        while self.buy(self.optimal_play(goal))
+            pass
+        end
+        self.step(goal, verbose)
+    end
+    return self.step_
+end
+
+function main()
+    game = Game(150.0, 1.0)
+    buy_one(game.resources[1])
+    println("Done")
+end
+
+main()
