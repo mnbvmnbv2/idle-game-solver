@@ -18,8 +18,8 @@ mutable struct Game
     step::Int
     ascend_equilibrium::Float64
 
-    function Game(money, income_mlt)
-        new(money, income_mlt, [
+    function Game()
+        new(150, 1.0, [
             Resource(4.0, 1.07, 0, 3),
             Resource(200.0, 1.15, 0, 200),
             Resource(6.0, 1.25, 0, 5)
@@ -149,10 +149,114 @@ function non_ascend_solve(self::Game, goal::Float64)
     return self.step
 end
 
+function ghost_solve(goal::Float64, mult::Float64 = 1.0)
+    ghost_game = Game()
+    reset(ghost_game, mult)
+    return ghost_game.non_ascend_solve(goal), ghost_game.money
+end
+
+function max_reachable_in(steps::Int, mult::Float64 = 1.0)
+    ghost_game = Game()
+    ghost_game.income_mult = mult
+
+    for steps_left = steps:-1:1
+        buying = true
+        while buying
+            break_even_times = get_break_even_times(ghost_game)
+            best_buys = sortperm(break_even_times)
+
+            next_worth = false
+            can_buy = false
+            # iterate over the fastest break even buys
+            num_candidates = size(best_buys)[1]
+            for i = 1:num_candidates - 1
+                curr_candidate = best_buys[i]
+                next_candidate = best_buys[i + 1]
+                if break_even_times[curr_candidate] > steps_left
+                    buying = false
+                    break
+                end
+                can_buy = costs(ghost_game)[curr_candidate] <= ghost_game.money
+                if can_buy
+                    break
+                end
+                if !can_buy
+                    # roi within this candidate
+                    next_worth = break_even_times[next_candidate] < time_untill(ghost_game, costs(ghost_game)[curr_candidate] + costs(ghost_game)[next_candidate])
+                    if !next_worth
+                        buying = false
+                    end
+                    if next_worth
+                        continue
+                    end
+                end
+            end
+            # check if loop finished and next_worth (we should buy last candidate)
+            # this is due to zip loop ending before we can check the last candidate
+            if curr_candidate == best_buys[end-1] && next_worth
+                curr_candidate = best_buys[end]
+            end
+            if !can_buy
+                buying = false
+            end
+            if buying
+                buying = buy(ghost_game, curr_candidate)
+            end
+        end
+        step(ghost_game)
+    end
+    return ghost_game.money
+end
+
+# function solve(
+#     self::Game, goal::Float64, start_time::Float64, best_time::Float64 = float(typemax(Float64))
+# )
+#     """Returns the time it takes to reach the goal"""
+#     time_untill_goal, _ = ghost_solve(goal, self.income_mult)
+#     # check if faster with ascend some intervals along the way
+#     if goal > self.ascend_equilibrium:
+#         viable_ascends = []
+#         # find if any point before goal is reached with current multiplier is worth ascending
+#         # we don't bother checking if it is possible to reach with a limit of 1 step
+#         end = math.floor(time_untill_goal) - 2
+#         # check in reverse order so we can break once we reach non viable ascends
+#         for i in range(end, 1, -1):
+#             # skip if not worth ascending as the the is too late
+#             # added this in loop for ease of understanding rather than checking before loop
+#             if best_time - start_time - 1 < i:
+#                 continue
+#             money = max_reachable_in(i, self.income_mult)
+#             mult_at_i = self.get_ascend_value(money)
+#             # if we don't gain substancially from ascending
+#             if mult_at_i < self.income_mult * 1.1:
+#                 break
+#             # recursively check if ascending is worth it
+#             ghost_game = self.__class__()
+#             ghost_game.income_mult = mult_at_i
+#             steps_used_on_rest = ghost_game.solve(goal, start_time + i, best_time)
+#             # if ascending is worth it we add to candidate list
+#             if steps_used_on_rest + i < time_untill_goal:
+#                 viable_ascends.append((steps_used_on_rest + i, i, money))
+#             # update best time
+#             if (new_time := start_time + i + steps_used_on_rest) < best_time:
+#                 best_time = new_time
+#         # sort by time used
+#         if viable_ascends:
+#             viable_ascends.sort(key=lambda x: x[0])
+#             # viable_ascend_list.append(viable_ascends)
+#             return viable_ascends[0][0]
+
+#     # if not worth ascending we return the time it took to reach the goal
+#     return time_untill_goal
+# end
+
+
 function main()
-    game = Game(150.0, 1.0)
-    done_step = non_ascend_solve(game, 2000012784500.0)
-    println("Done ", done_step)
+    # game = Game()
+    # done_step = non_ascend_solve(game, 2000012784500.0)
+    # println("Done ", done_step)
+    money = max_reachable_in(2000000)
+    println("Money: ", money)
 end
 
 elapsed_time = @elapsed begin

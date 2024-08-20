@@ -277,7 +277,8 @@ def main():
 def speed():
     pre = time.monotonic()
     game = Game()
-    game.non_ascend_solve(2000012784500, verbose=True)
+    # game.non_ascend_solve(2000012784500, verbose=True)
+    max_reachable_in(2000000)
     post = time.monotonic()
     print(post - pre)
 
