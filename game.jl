@@ -64,28 +64,28 @@ end
 
 function buy(self::Game, idx::Int)
     if idx == -1
-        return False
+        return false
     end
     if self.money >= self.resources[idx].price
         self.money -= self.resources[idx].price
-        self.resources[idx].buy_one()
-        return True
+        buy_one(self.resources[idx])
+        return true
     end
-    return False
+    return false
 end
 
 function step(self::Game)
-    self.money += self.income
-    self.step_ += 1
-    println("Step: ",self.step_,"Money: ",self.money,"Income: ",self.income,"Owned: ",self.owned,"Costs: ",self.costs)
+    self.money += income(self)
+    self.step += 1
+    println("Step: ",self.step,", Money: ",self.money,", Income: ",income(self),", Owned: ",owned(self),", Costs: ",costs(self))
 end
 
 function time_untill(self::Game, goal::Float64)
-    if self.income == 0
-        return float("inf")
+    if income(self) == 0
+        return float(typemax(Float64))
     end
     adjusted_target = goal - self.money
-    return adjusted_target / self.income
+    return adjusted_target / income(self)
 end
 
 function reset(self::Game, income_mult::Float64 = 1.0)
@@ -98,21 +98,24 @@ end
 
 function optimal_play(self::Game, goal::Float64)
     break_even_times = get_break_even_times(self)
-    best_buys = argsort(break_even_times)
-    worth_waiting_until_goal = break_even_times[best_buys[0]] > time_untill(self, goal)
+    best_buys = sortperm(break_even_times)
+    worth_waiting_until_goal = break_even_times[best_buys[1]] > time_untill(self, goal)
     if worth_waiting_until_goal
         return -1
     end
+    # create variables prior to loop
+    next_worth = false
+    no_cash = false
     # iterate over the fastest break even buys
-    num_candidates = len(best_buys)
-    for i in num_candidates - 1
+    num_candidates = size(best_buys)[1]
+    for i = 1:num_candidates - 1
         curr_candidate = best_buys[i]
         next_candidate = best_buys[i + 1]
-        no_cash = self.costs[curr_candidate] > self.money
+        no_cash = self.resources[curr_candidate].price > self.money
         if no_cash
-            enough_next_plus_this= self.costs[curr_candidate] + self.costs[next_candidate]
+            enough_next_plus_this= self.resources[curr_candidate].price + self.resources[next_candidate].price
             next_worth = break_even_times[next_candidate] < time_untill(self, enough_next_plus_this)
-            if not next_worth
+            if !next_worth
                 return -1
             end
             if next_worth
@@ -124,8 +127,8 @@ function optimal_play(self::Game, goal::Float64)
         end
     end
 
-    if curr_candidate == best_buys[-2] && next_worth
-        curr_candidate = best_buys[-1]
+    if curr_candidate == best_buys[end-1] && next_worth
+        curr_candidate = best_buys[end]
     end
     if no_cash
         return -1
@@ -135,18 +138,23 @@ end
 
 function non_ascend_solve(self::Game, goal::Float64)
     while self.money < goal
-        while self.buy(self.optimal_play(goal))
-            pass
+        buying = true
+        while buying
+            buying = buy(self, optimal_play(self, goal))
         end
-        self.step(goal, verbose)
+        step(self)
     end
-    return self.step_
+    return self.step
 end
 
 function main()
     game = Game(150.0, 1.0)
-    buy_one(game.resources[1])
-    println("Done")
+    done_step = non_ascend_solve(game, 20000.0)
+    println("Done ", done_step)
 end
 
-main()
+elapsed_time = @elapsed begin
+    main()
+end
+
+println("Elapsed time: ", elapsed_time)
