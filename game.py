@@ -9,9 +9,14 @@ from enum import Enum, auto
 sys.setrecursionlimit(100000)
 
 
+class Strategy(Enum):
+    RETIRE = auto()  # untill goal
+    SAVING = auto()  # untill we can buy more
+    BUYING = auto()
+
+
 class SavingStrategy(Enum):
-    UNTIL_GOAL = -2
-    UNTIL_NEXT_BUY = -1
+    UNTIL_GOAL = -1
 
 
 class Resource:
@@ -156,9 +161,9 @@ class Game:
                 self.costs[curr_candidate] + self.costs[next_candidate]
             )
             if not next_worth:
-                return curr_candidate  # SavingStrategy.UNTIL_NEXT_BUY
+                return curr_candidate
         if not can_buy:
-            return curr_candidate  # SavingStrategy.UNTIL_NEXT_BUY
+            return curr_candidate
         return curr_candidate
 
     def non_ascend_solve(self, goal: float, verbose: bool = False) -> int:
@@ -169,8 +174,6 @@ class Game:
                 case SavingStrategy.UNTIL_GOAL:
                     self.step_ += math.ceil(self.time_untill(goal))
                     break
-                case SavingStrategy.UNTIL_NEXT_BUY:
-                    pass
                 case _:
                     while True:
                         bought = self.buy(buy_strategy)
@@ -181,7 +184,7 @@ class Game:
                         )
                         self.step(until_enough)
                     continue
-            self.step(1, goal, verbose)
+            # self.step(1, goal, verbose)
             # posttime = self.time_untill(goal)
             # assert posttime < pretime - 0.99
         return self.step_
@@ -234,41 +237,50 @@ def max_reachable_in(steps: int, mult: float = 1.0) -> float:
     ghost_game.income_mult = mult
 
     for steps_left in range(steps, 0, -1):
-        buying = True
-        while buying:
+        strategy = Strategy.BUYING
+        while strategy == Strategy.BUYING:
             break_even_times = ghost_game.get_break_even_times()
             best_buys = np.argsort(break_even_times)
 
+            worth_waiting_until_goal = break_even_times[best_buys[0]] > steps_left
+            if worth_waiting_until_goal:
+                strategy = Strategy.RETIRE
+                break
+
             # iterate over the fastest break even buys
-            for curr_candidate, next_candidate in zip(best_buys, best_buys[1:]):
-                next_worth = False
+            for curr_candidate, next_candidate in zip(
+                best_buys, np.concatenate((best_buys[1:], best_buys[-1:]))
+            ):
                 if break_even_times[curr_candidate] > steps_left:
-                    buying = False
+                    strategy = Strategy.SAVING
                     break
                 can_buy = ghost_game.costs[curr_candidate] <= ghost_game.money
                 if can_buy:
                     break
-                if not can_buy:
-                    # roi within this candidate
-                    next_worth = break_even_times[
-                        next_candidate
-                    ] < ghost_game.time_untill(
-                        ghost_game.costs[curr_candidate]
-                        + ghost_game.costs[next_candidate]
-                    )
-                    if not next_worth:
-                        buying = False
-                    if next_worth:
-                        continue
-            # check if loop finished and next_worth (we should buy last candidate)
-            # this is due to zip loop ending before we can check the last candidate
-            if curr_candidate == best_buys[-2] and next_worth:
-                curr_candidate = best_buys[-1]
+                # roi within this candidate
+                next_worth = break_even_times[next_candidate] < ghost_game.time_untill(
+                    ghost_game.costs[curr_candidate] + ghost_game.costs[next_candidate]
+                )
+                if next_worth:
+                    continue
+                strategy = Strategy.SAVING
+                break
             if not can_buy:
-                buying = False
-            if buying:
-                buying = ghost_game.buy(curr_candidate)
-        ghost_game.step()
+                strategy = Strategy.SAVING
+            if strategy == Strategy.BUYING:
+                bought = ghost_game.buy(curr_candidate)
+                if not bought:
+                    strategy = Strategy.SAVING
+
+        match strategy:
+            case Strategy.RETIRE:
+                ghost_game.step(steps_left)
+                break
+            case Strategy.SAVING:
+                time_until_enough = math.ceil(
+                    ghost_game.time_untill(ghost_game.costs[curr_candidate])
+                )
+                ghost_game.step(time_until_enough)
     return ghost_game.money
 
 
@@ -299,15 +311,24 @@ def speed():
     game = Game()
     # game.non_ascend_solve(2000012784500, verbose=True)
     # max_reachable_in(2000000)
-    game.solve(2_000_000, 0)
+    num_steps = game.solve(2_000_000, 0)
     post = time.monotonic()
     print(post - pre)
+    print(f"{num_steps=}")
 
 
 def speed2():
     pre = time.monotonic()
     game = Game()
-    sol = game.non_ascend_solve(200_000_000_000, verbose=True)
+    sol = game.non_ascend_solve(200_000_000_000_000_000, verbose=True)
+    print(sol)
+    post = time.monotonic()
+    print(post - pre)
+
+
+def speed3():
+    pre = time.monotonic()
+    sol = max_reachable_in(200_000_000)
     print(sol)
     post = time.monotonic()
     print(post - pre)
@@ -319,4 +340,4 @@ def test():
 
 
 if __name__ == "__main__":
-    speed2()
+    main()
