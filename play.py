@@ -67,7 +67,7 @@ class MainWidget(QWidget):
         self.mult_label.setText(f"Mult: {self.game.income_mult:.2f}")
 
     def next_step(self):
-        self.game.step(self.goal, verbose=True)
+        self.game.step(1, self.goal, verbose=True)
         self.update_texts()
 
     def optimal_play(self):

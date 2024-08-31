@@ -3,9 +3,15 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+from enum import Enum, auto
 
 
 sys.setrecursionlimit(100000)
+
+
+class SavingStrategy(Enum):
+    UNTIL_GOAL = -2
+    UNTIL_NEXT_BUY = -1
 
 
 class Resource:
@@ -74,17 +80,20 @@ class Game:
         return break_even_times
 
     def buy(self, idx: int) -> bool:
-        if idx == -1:
-            return False
         if self.money >= self.resources[idx].price:
             self.money -= self.resources[idx].price
             self.resources[idx].buy_one()
             return True
         return False
 
-    def step(self, goal: float | None = None, verbose: bool = False) -> None:
-        self.money += self.income
-        self.step_ += 1
+    def step(
+        self,
+        num_steps: int = 1,
+        goal: float | None = None,
+        verbose: bool = False,
+    ) -> None:
+        self.money += self.income * num_steps
+        self.step_ += num_steps
         if self.step_ % 100000 == 0:
             if verbose:
                 untill_goal = f"Untill Goal: {self.time_untill(goal)}" if goal else ""
@@ -121,13 +130,11 @@ class Game:
             return money / self.ascend_equilibrium
         return 1.0
 
-    def optimal_play(self, goal: float) -> int:
+    def optimal_play(self, goal: float) -> int | SavingStrategy:
         """Returns the index of the optimal play - best roi or, -1 if it is worth to wait instead.
 
         NOTE: It is actually not the optimal play, as in some situations it could be better to buy multiple
         of a worse roi resource if it "fits" into the current budget.
-
-        NOTE 2: Could return -2 if it is worth to wait and then skip calling this function in the main loop.
         """
         break_even_times = self.get_break_even_times()
         best_buys = np.argsort(break_even_times)
@@ -135,35 +142,41 @@ class Game:
             goal
         )
         if worth_waiting_until_goal:
-            return -1
-        # iterate over the fastest break even buys
-        for curr_candidate, next_candidate in zip(best_buys, best_buys[1:]):
-            no_cash = self.costs[curr_candidate] > self.money
-            if no_cash:
-                next_worth = break_even_times[next_candidate] < self.time_untill(
-                    self.costs[curr_candidate] + self.costs[next_candidate]
-                )
-                if not next_worth:
-                    return -1
-                if next_worth:
-                    continue
-            if not no_cash:
-                break
+            return SavingStrategy.UNTIL_GOAL
 
-        if curr_candidate == best_buys[-2] and next_worth:
-            curr_candidate = best_buys[-1]
-        if no_cash:
-            return -1
+        # iterate over the fastest break even buys
+        for curr_candidate, next_candidate in zip(
+            best_buys, np.concatenate((best_buys[1:], best_buys[-1:]))
+        ):
+            can_buy = self.costs[curr_candidate] < self.money
+            if can_buy:
+                return curr_candidate
+            # cannot buy
+            next_worth = break_even_times[next_candidate] < self.time_untill(
+                self.costs[curr_candidate] + self.costs[next_candidate]
+            )
+            if not next_worth:
+                return SavingStrategy.UNTIL_NEXT_BUY
+        if not can_buy:
+            return SavingStrategy.UNTIL_NEXT_BUY
         return curr_candidate
 
     def non_ascend_solve(self, goal: float, verbose: bool = False) -> int:
         while self.money < goal:
-            pretime = self.time_untill(goal)
-            while self.buy(self.optimal_play(goal)):
-                pass
-            self.step(goal, verbose)
-            posttime = self.time_untill(goal)
-            assert posttime < pretime - 0.99
+            # pretime = self.time_untill(goal)
+            buy_strategy = self.optimal_play(goal)
+            match buy_strategy:
+                case SavingStrategy.UNTIL_GOAL:
+                    self.step_ += math.ceil(self.time_untill(goal))
+                    break
+                case SavingStrategy.UNTIL_NEXT_BUY:
+                    pass
+                case _:
+                    self.buy(buy_strategy)
+                    continue
+            self.step(1, goal, verbose)
+            # posttime = self.time_untill(goal)
+            # assert posttime < pretime - 0.99
         return self.step_
 
     def solve(
@@ -254,7 +267,7 @@ def max_reachable_in(steps: int, mult: float = 1.0) -> float:
 
 def ghost_solve(goal: float, mult: float = 1.0) -> tuple[int, float]:
     ghost_game = Game()
-    ghost_game.reset(mult)
+    ghost_game.income_mult = mult
     return ghost_game.non_ascend_solve(goal), ghost_game.money
 
 
@@ -278,10 +291,25 @@ def speed():
     pre = time.monotonic()
     game = Game()
     # game.non_ascend_solve(2000012784500, verbose=True)
-    max_reachable_in(2000000)
+    # max_reachable_in(2000000)
+    game.solve(20000000, 0)
     post = time.monotonic()
     print(post - pre)
 
 
+def speed2():
+    pre = time.monotonic()
+    game = Game()
+    sol = game.non_ascend_solve(200_000_000_000, verbose=True)
+    print(sol)
+    post = time.monotonic()
+    print(post - pre)
+
+
+def test():
+    game = Game()
+    game.optimal_play(200)
+
+
 if __name__ == "__main__":
-    speed()
+    speed2()
