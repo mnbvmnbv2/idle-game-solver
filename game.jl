@@ -1,3 +1,5 @@
+using BenchmarkTools
+
 mutable struct Resource
     quantity::Int
     price::Float64
@@ -213,6 +215,7 @@ function ascend(self::Game)
     end
 end
 
+
 function solve(self::Game, goal::Float64, start_time::Float64, best_time::Float64 = float(typemax(Float64)))
     time_untill_goal, _ = non_ascend_solve(goal, self.income_mult)
     # check if faster with ascend some intervals along the way
@@ -259,7 +262,7 @@ function solve(self::Game, goal::Float64, start_time::Float64, best_time::Float6
 end
 
 
-function main()
+function main(goal::Float64 = 2000000.0)
     # game = Game()
     # done_step = non_ascend_solve(game, 2000012784500.0)
     # println("Done ", done_step)
@@ -267,11 +270,19 @@ function main()
     # money = max_reachable_in(2000000)
     # println("Money: ", money)
 
-    time_used = solve(Game(), 2000012.0, 0.0, float(typemax(Float64)))
+    b = solve(Game(), goal, 0.0)
+    # println("Benchmark: ", b)
+    # println("Benchmark time: ", b.times)
+    # println("Benchmark memory: ", b.memory)
+    # println("Benchmark gctime: ", b.gctime)
+    # println("Benchmark gcstats: ", b.gcstats)
+    # println("Benchmark allocations: ", b.allocations)
+    # println("Benchmark samples: ", b.samples)
+    # println("Benchmark evals: ", b.evals)
 end
 
-elapsed_time = @elapsed begin
-    main()
-end
+# elapsed_time = @elapsed begin
+main()
+# end
 
-println("Elapsed time: ", elapsed_time)
+# println("Elapsed time: ", elapsed_time)
