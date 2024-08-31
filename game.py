@@ -156,9 +156,9 @@ class Game:
                 self.costs[curr_candidate] + self.costs[next_candidate]
             )
             if not next_worth:
-                return SavingStrategy.UNTIL_NEXT_BUY
+                return curr_candidate  # SavingStrategy.UNTIL_NEXT_BUY
         if not can_buy:
-            return SavingStrategy.UNTIL_NEXT_BUY
+            return curr_candidate  # SavingStrategy.UNTIL_NEXT_BUY
         return curr_candidate
 
     def non_ascend_solve(self, goal: float, verbose: bool = False) -> int:
@@ -172,7 +172,14 @@ class Game:
                 case SavingStrategy.UNTIL_NEXT_BUY:
                     pass
                 case _:
-                    self.buy(buy_strategy)
+                    while True:
+                        bought = self.buy(buy_strategy)
+                        if bought:
+                            break
+                        until_enough = math.ceil(
+                            self.time_untill(self.costs[buy_strategy])
+                        )
+                        self.step(until_enough)
                     continue
             self.step(1, goal, verbose)
             # posttime = self.time_untill(goal)
@@ -292,7 +299,7 @@ def speed():
     game = Game()
     # game.non_ascend_solve(2000012784500, verbose=True)
     # max_reachable_in(2000000)
-    game.solve(20000000, 0)
+    game.solve(2_000_000, 0)
     post = time.monotonic()
     print(post - pre)
 
