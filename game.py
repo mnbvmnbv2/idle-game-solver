@@ -251,9 +251,6 @@ def max_reachable_in(steps: int, mult: float = 1.0) -> float:
             for curr_candidate, next_candidate in zip(
                 best_buys, np.concatenate((best_buys[1:], best_buys[-1:]))
             ):
-                if break_even_times[curr_candidate] > steps_left:
-                    strategy = Strategy.SAVING
-                    break
                 can_buy = ghost_game.costs[curr_candidate] <= ghost_game.money
                 if can_buy:
                     break
@@ -261,16 +258,14 @@ def max_reachable_in(steps: int, mult: float = 1.0) -> float:
                 next_worth = break_even_times[next_candidate] < ghost_game.time_untill(
                     ghost_game.costs[curr_candidate] + ghost_game.costs[next_candidate]
                 )
-                if next_worth:
-                    continue
+                if not next_worth:
+                    break
+            # we could not buy the current candidate, but the current one is worth it
+            # or we can buy the current candidate
+            # try to buy either way
+            bought = ghost_game.buy(curr_candidate)
+            if not bought:
                 strategy = Strategy.SAVING
-                break
-            if not can_buy:
-                strategy = Strategy.SAVING
-            if strategy == Strategy.BUYING:
-                bought = ghost_game.buy(curr_candidate)
-                if not bought:
-                    strategy = Strategy.SAVING
 
         match strategy:
             case Strategy.RETIRE:
@@ -328,7 +323,7 @@ def speed2():
 
 def speed3():
     pre = time.monotonic()
-    sol = max_reachable_in(200_000_000)
+    sol = max_reachable_in(200_000_000_000_000)
     print(sol)
     post = time.monotonic()
     print(post - pre)
@@ -340,4 +335,4 @@ def test():
 
 
 if __name__ == "__main__":
-    main()
+    speed3()
