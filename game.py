@@ -8,6 +8,11 @@ from enum import Enum, auto
 
 sys.setrecursionlimit(100000)
 
+num_calls = 0
+all_calls = []
+
+start_time = time.perf_counter()
+
 
 class Strategy(Enum):
     RETIRE = auto()  # untill goal
@@ -193,24 +198,39 @@ class Game:
         self, goal: float, start_time: float, best_time: float = float("inf")
     ) -> float:
         """Returns the time it takes to reach the goal"""
+        global num_calls
+        global all_calls
         time_untill_goal, _ = ghost_solve(goal, self.income_mult)
+        all_calls.append(
+            (goal, start_time, best_time, time.perf_counter(), time_untill_goal)
+        )
+        num_calls += 1
         # check if faster with ascend some intervals along the way
         if goal > self.ascend_equilibrium:
             viable_ascends = []
             # find if any point before goal is reached with current multiplier is worth ascending
             # we don't bother checking if it is possible to reach with a limit of 1 step
-            end = math.floor(time_untill_goal) - 2
-            # check in reverse order so we can break once we reach non viable ascends
-            for i in range(end, 1, -1):
+            end = math.floor(time_untill_goal) - 1
+            # check in sort of binary order, cutting parts that arae not worth ascending
+            to_check = list(range(2, end))
+            while to_check:
+                # pick 1/2 point
+                idx = len(to_check) // 2
+                i = to_check.pop(idx)
                 # skip if not worth ascending as the the is too late
                 # added this in loop for ease of understanding rather than checking before loop
                 if best_time - start_time - 1 < i:
+                    # remove all to_check that are larger than i
+                    # we could cut by index, but no time difference, perhaps with larger lists
+                    to_check = [x for x in to_check if x < i]  # to_check[:idx]
                     continue
                 money = max_reachable_in(i, self.income_mult)
                 mult_at_i = self.get_ascend_value(money)
                 # if we don't gain substancially from ascending
                 if mult_at_i < self.income_mult * 1.1:
-                    break
+                    # remove all to_check that are smaller than i
+                    to_check = [x for x in to_check if x > i]
+                    continue
                 # recursively check if ascending is worth it
                 ghost_game = self.__class__()
                 ghost_game.income_mult = mult_at_i
@@ -310,6 +330,16 @@ def speed():
     post = time.monotonic()
     print(post - pre)
     print(f"{num_steps=}")
+    print(f"{num_calls=}")
+
+    # visualize all_calls
+    all_calls.sort(key=lambda x: x[0])
+    plt.plot([x[1] for x in all_calls], label="start_time")
+    plt.plot([x[2] for x in all_calls], label="best_time")
+    plt.plot([x[3] - start_time for x in all_calls], label="time")
+    plt.plot([x[4] for x in all_calls], label="time_untill_goal")
+    plt.legend()
+    plt.show()
 
 
 def speed2():
@@ -335,4 +365,4 @@ def test():
 
 
 if __name__ == "__main__":
-    speed3()
+    speed()
