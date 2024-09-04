@@ -17,7 +17,7 @@ start_time = time.perf_counter()
 
 @dataclass
 class AscendCombo:
-    time_on_rest: float
+    step: float
     mult: float
 
 
@@ -213,7 +213,7 @@ class Game:
         goal: float,
         start_time: float,
         best_time: float = float("inf"),
-        last_ascend_combo: list[AscendCombo] = [AscendCombo(float("inf"), 1.0)],
+        best_ascends: list[AscendCombo] = [AscendCombo(0.0, 1.0)],
     ) -> Returner:
         """Returns the time it takes to reach the goal"""
         global num_calls
@@ -236,10 +236,9 @@ class Game:
                 idx = len(to_check) // 2
                 i = to_check.pop(idx)
                 # skip if not worth ascending as the the is too late
-                # added this in loop for ease of understanding rather than checking before loop
+                # Note this is inside loop because it can be updated inside the loop
                 if best_time - start_time - 1 < i:
                     # remove all to_check that are larger than i
-                    # we could cut by index, but no time difference, perhaps with larger lists
                     to_check = [x for x in to_check if x < i]  # to_check[:idx]
                     continue
                 money = max_reachable_in(i, self.income_mult)
@@ -249,15 +248,14 @@ class Game:
                     # remove all to_check that are smaller than i
                     to_check = [x for x in to_check if x > i]
                     continue
-                # less income_mult than last ascend combo
-                # and less time than last ascend combo
+                # check if we have a lower multiplier and less time left than what we know to be the best
                 breakout = False
-                for ascend_combo in last_ascend_combo:
-                    less_time = best_time - start_time - i < ascend_combo.time_on_rest
-                    less_mult = mult_at_i < ascend_combo.mult
+                for ascend_combo in best_ascends:
+                    time_left = best_time - start_time - i
+                    ascend_time_left = best_time - ascend_combo.step
+                    less_time = time_left <= ascend_time_left
+                    less_mult = mult_at_i <= ascend_combo.mult
                     if less_mult and less_time:
-                        # remove all to_check that are larger than i
-                        # to_check = [x for x in to_check if x < i]
                         breakout = True
                 if breakout:
                     continue
@@ -265,18 +263,15 @@ class Game:
                 ghost_game = self.__class__()
                 ghost_game.income_mult = mult_at_i
                 returner = ghost_game.solve(
-                    goal, start_time + i, best_time, last_ascend_combo
+                    goal, start_time + i, best_time, best_ascends
                 )
                 # if ascending is worth it we add to candidate list
                 if returner.time + i < time_untill_goal:
-                    time_on_rest = returner.time - start_time - i
-                    viable_ascends.append(
-                        (returner.time + i, i, time_on_rest, mult_at_i)
-                    )
+                    viable_ascends.append((returner.time + i, i, mult_at_i))
                 # update best time
                 if (new_time := start_time + i + returner.time) < best_time:
                     best_time = new_time
-                    last_ascend_combo = [AscendCombo(returner.time, mult_at_i)]
+                    best_ascends = returner.ascend_combo
             # sort by time used
             if viable_ascends:
                 viable_ascends.sort(key=lambda x: x[0])
@@ -284,15 +279,19 @@ class Game:
                 return Returner(
                     viable_ascends[0][0],
                     [start_time] + returner.ascends,
-                    [AscendCombo(viable_ascends[0][2], viable_ascends[0][3])]
+                    [
+                        AscendCombo(
+                            start_time + viable_ascends[0][1], viable_ascends[0][2]
+                        )
+                    ]
                     + returner.ascend_combo,
                 )
 
         # if not worth ascending we return the time it took to reach the goal
         return Returner(
-            time_untill_goal,
+            time_untill_goal,  # remaining time untill goal
             [start_time],
-            [AscendCombo(time_untill_goal - start_time, self.income_mult)],
+            [AscendCombo(start_time, self.income_mult)],
         )
 
 
