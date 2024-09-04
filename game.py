@@ -3,6 +3,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+from dataclasses import dataclass
 from enum import Enum, auto
 
 
@@ -12,6 +13,19 @@ num_calls = 0
 all_calls = []
 
 start_time = time.perf_counter()
+
+
+@dataclass
+class AscendCombo:
+    time_on_rest: float
+    mult: float
+
+
+@dataclass
+class Returner:
+    time: float
+    ascends: list[float]
+    ascend_combo: list[AscendCombo]
 
 
 class Strategy(Enum):
@@ -195,8 +209,12 @@ class Game:
         return self.step_
 
     def solve(
-        self, goal: float, start_time: float, best_time: float = float("inf")
-    ) -> float:
+        self,
+        goal: float,
+        start_time: float,
+        best_time: float = float("inf"),
+        last_ascend_combo: list[AscendCombo] = [AscendCombo(float("inf"), 1.0)],
+    ) -> Returner:
         """Returns the time it takes to reach the goal"""
         global num_calls
         global all_calls
@@ -231,24 +249,51 @@ class Game:
                     # remove all to_check that are smaller than i
                     to_check = [x for x in to_check if x > i]
                     continue
+                # less income_mult than last ascend combo
+                # and less time than last ascend combo
+                breakout = False
+                for ascend_combo in last_ascend_combo:
+                    less_time = best_time - start_time - i < ascend_combo.time_on_rest
+                    less_mult = mult_at_i < ascend_combo.mult
+                    if less_mult and less_time:
+                        # remove all to_check that are larger than i
+                        # to_check = [x for x in to_check if x < i]
+                        breakout = True
+                if breakout:
+                    continue
                 # recursively check if ascending is worth it
                 ghost_game = self.__class__()
                 ghost_game.income_mult = mult_at_i
-                steps_used_on_rest = ghost_game.solve(goal, start_time + i, best_time)
+                returner = ghost_game.solve(
+                    goal, start_time + i, best_time, last_ascend_combo
+                )
                 # if ascending is worth it we add to candidate list
-                if steps_used_on_rest + i < time_untill_goal:
-                    viable_ascends.append((steps_used_on_rest + i, i, money))
+                if returner.time + i < time_untill_goal:
+                    time_on_rest = returner.time - start_time - i
+                    viable_ascends.append(
+                        (returner.time + i, i, time_on_rest, mult_at_i)
+                    )
                 # update best time
-                if (new_time := start_time + i + steps_used_on_rest) < best_time:
+                if (new_time := start_time + i + returner.time) < best_time:
                     best_time = new_time
+                    last_ascend_combo = [AscendCombo(returner.time, mult_at_i)]
             # sort by time used
             if viable_ascends:
                 viable_ascends.sort(key=lambda x: x[0])
                 # viable_ascend_list.append(viable_ascends)
-                return viable_ascends[0][0]
+                return Returner(
+                    viable_ascends[0][0],
+                    [start_time] + returner.ascends,
+                    [AscendCombo(viable_ascends[0][2], viable_ascends[0][3])]
+                    + returner.ascend_combo,
+                )
 
         # if not worth ascending we return the time it took to reach the goal
-        return time_untill_goal
+        return Returner(
+            time_untill_goal,
+            [start_time],
+            [AscendCombo(time_untill_goal - start_time, self.income_mult)],
+        )
 
 
 def max_reachable_in(steps: int, mult: float = 1.0) -> float:
@@ -326,12 +371,15 @@ def speed():
     game = Game()
     # game.non_ascend_solve(2000012784500, verbose=True)
     # max_reachable_in(2000000)
-    num_steps = game.solve(2_000_000, 0)
+    returner = game.solve(2_000_000, 0)
+    num_steps = returner.time
+    ascends = returner.ascends
     post = time.monotonic()
     print(post - pre)
     print(f"{num_steps=}")
     print(f"{num_calls=}")
 
+    print(ascends)
     # visualize all_calls
     all_calls.sort(key=lambda x: x[0])
     plt.plot([x[1] for x in all_calls], label="start_time")
