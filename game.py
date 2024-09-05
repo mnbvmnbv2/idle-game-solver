@@ -244,21 +244,21 @@ class Game:
                 money = max_reachable_in(i, self.income_mult)
                 mult_at_i = self.get_ascend_value(money)
                 # if we don't gain substancially from ascending
-                if mult_at_i < self.income_mult * 1.1:
+                if mult_at_i < self.income_mult * 1.01:
                     # remove all to_check that are smaller than i
                     to_check = [x for x in to_check if x > i]
                     continue
                 # check if we have a lower multiplier and less time left than what we know to be the best
-                breakout = False
-                for ascend_combo in best_ascends:
-                    time_left = best_time - start_time - i
-                    ascend_time_left = best_time - ascend_combo.step
-                    less_time = time_left <= ascend_time_left
-                    less_mult = mult_at_i <= ascend_combo.mult
-                    if less_mult and less_time:
-                        breakout = True
-                if breakout:
-                    continue
+                # breakout = False
+                # for ascend_combo in best_ascends:
+                #     time_left = best_time - start_time - i
+                #     ascend_time_left = best_time - ascend_combo.step
+                #     less_time = time_left <= ascend_time_left
+                #     less_mult = mult_at_i <= ascend_combo.mult
+                #     if less_mult and less_time:
+                #         breakout = True
+                # if breakout:
+                #     continue
                 # recursively check if ascending is worth it
                 ghost_game = self.__class__()
                 ghost_game.income_mult = mult_at_i
@@ -266,11 +266,12 @@ class Game:
                     goal, start_time + i, best_time, best_ascends
                 )
                 # if ascending is worth it we add to candidate list
-                if returner.time + i < time_untill_goal:
-                    viable_ascends.append((returner.time + i, i, mult_at_i))
+                total_time = returner.time + i + start_time
+                if total_time < time_untill_goal:
+                    viable_ascends.append((total_time, i, mult_at_i))
                 # update best time
-                if (new_time := start_time + i + returner.time) < best_time:
-                    best_time = new_time
+                if total_time < best_time:
+                    best_time = total_time
                     best_ascends = returner.ascend_combo
             # sort by time used
             if viable_ascends:
@@ -349,6 +350,19 @@ def ghost_solve(goal: float, mult: float = 1.0) -> tuple[int, float]:
     return ghost_game.non_ascend_solve(goal), ghost_game.money
 
 
+def optimal_based_on_ascends(ascends: list[int], final_step: int) -> float:
+    game = Game()
+    mult = 1.0
+    step = 0
+    for i, ascend in enumerate(ascends):
+        money = max_reachable_in(ascend - step, mult)
+        mult = game.get_ascend_value(money)
+        step = ascend
+        print(i, ascend, money, mult)
+    money = max_reachable_in(final_step - step, mult)
+    return money
+
+
 def main():
     # Normal
     solutions = []
@@ -370,7 +384,7 @@ def speed():
     game = Game()
     # game.non_ascend_solve(2000012784500, verbose=True)
     # max_reachable_in(2000000)
-    returner = game.solve(2_000_000, 0)
+    returner = game.solve(1_000_000, 0)
     num_steps = returner.time
     ascends = returner.ascends
     post = time.monotonic()
@@ -413,3 +427,11 @@ def test():
 
 if __name__ == "__main__":
     speed()
+
+    # res = optimal_based_on_ascends([0, 9, 19], 32)
+    # print(res)
+
+    # time_untill_goal, _ = ghost_solve(2_000_000, 1.0)
+    # print(time_untill_goal)
+
+    # print(max_reachable_in(10, 3.17))
