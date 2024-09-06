@@ -38,6 +38,19 @@ class SavingStrategy(Enum):
     UNTIL_GOAL = -1
 
 
+class BestState:
+    def __init__(
+        self, time: float = float("inf"), ascends: list[AscendCombo] | None = None
+    ):
+        self.time = time
+        self.ascends = ascends if ascends is not None else [AscendCombo(0.0, 1.0)]
+
+    def update(self, time: float, ascends: list[AscendCombo]) -> None:
+        if time < self.time:
+            self.time = time
+            self.ascends = ascends
+
+
 class Resource:
     def __init__(self, price, cost_mult, cost_increase_step, income) -> None:
         self.quantity = 0
@@ -219,17 +232,18 @@ class Game:
         self,
         goal: float,
         start_time: float,
-        best_time: float = float("inf"),
-        best_ascends: list[AscendCombo] = [AscendCombo(0.0, 1.0)],
+        best_state: BestState | None = None,
     ) -> Returner:
         """Returns the time it takes to reach the goal"""
+        if best_state is None:
+            best_state = BestState()
         global num_calls
         global all_calls
         time_untill_goal, money = ghost_solve(goal, self.income_mult)
         # print(time_untill_goal, goal, money)
         assert money >= goal
         all_calls.append(
-            (goal, start_time, best_time, time.perf_counter(), time_untill_goal)
+            (goal, start_time, best_state.time, time.perf_counter(), time_untill_goal)
         )
         num_calls += 1
         # check if faster with ascend some intervals along the way
@@ -246,7 +260,7 @@ class Game:
                 i = to_check.pop(idx)
                 # skip if not worth ascending as the the is too late
                 # Note this is inside loop because it can be updated inside the loop
-                if best_time - start_time - 1 < i:
+                if best_state.time - start_time - 1 < i:
                     # remove all to_check that are larger than i
                     to_check = [x for x in to_check if x < i]  # to_check[:idx]
                     continue
@@ -258,36 +272,31 @@ class Game:
                     to_check = [x for x in to_check if x > i]
                     continue
                 # check if we have a lower multiplier and less time left than what we know to be the best
-                # breakout = False
-                # for ascend_combo in best_ascends:
-                #     time_left = best_time - start_time - i
-                #     ascend_time_left = best_time - ascend_combo.step
-                #     less_time = time_left <= ascend_time_left
-                #     less_mult = mult_at_i <= ascend_combo.mult
-                #     if less_mult and less_time:
-                #         breakout = True
-                # if breakout:
-                #     continue
+                breakout = False
+                for ascend_combo in best_state.ascends:
+                    time_left = best_state.time - start_time - i
+                    ascend_time_left = best_state.time - ascend_combo.step
+                    less_time = time_left <= ascend_time_left
+                    less_mult = mult_at_i <= ascend_combo.mult
+                    if less_mult and less_time:
+                        breakout = True
+                if breakout:
+                    continue
                 # recursively check if ascending is worth it
                 ghost_game = self.__class__()
                 ghost_game.income_mult = mult_at_i
-                returner = ghost_game.solve(
-                    goal, start_time + i, best_time, best_ascends
-                )
+                returner = ghost_game.solve(goal, start_time + i, best_state)
                 # if ascending is worth it we add to candidate list
                 total_time = returner.time + i + start_time
                 if total_time < time_untill_goal:
                     # print(total_time)
                     viable_ascends.append((returner.time + i, i, mult_at_i, returner))
                 # update best time
-                if total_time < best_time:
-                    best_time = total_time
-                    best_ascends = returner.ascend_combo
+                if total_time < best_state.time:
+                    best_state.update(total_time, returner.ascend_combo)
             # sort by time used
             if viable_ascends:
                 viable_ascends.sort(key=lambda x: x[0])
-                # viable_ascend_list.append(viable_ascends)
-                print(f"{start_time=}, {self.income_mult=} {viable_ascends=}\n")
                 return Returner(
                     viable_ascends[0][0],
                     [start_time] + viable_ascends[0][3].ascends,
