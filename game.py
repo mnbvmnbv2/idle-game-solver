@@ -44,11 +44,18 @@ class BestState:
     ):
         self.time = time
         self.ascends = ascends if ascends is not None else [AscendCombo(0.0, 1.0)]
+        self.best_mults: dict[float, float] = {0.0: 1.0}
 
     def update(self, time: float, ascends: list[AscendCombo]) -> None:
         if time < self.time:
             self.time = time
             self.ascends = ascends
+
+    def update_mult(self, step: float, mult: float) -> None:
+        if step not in self.best_mults:
+            self.best_mults[step] = mult
+        else:
+            self.best_mults[step] = max(self.best_mults[step], mult)
 
 
 class Resource:
@@ -240,7 +247,6 @@ class Game:
         global num_calls
         global all_calls
         time_untill_goal, money = ghost_solve(goal, self.income_mult)
-        # print(time_untill_goal, goal, money)
         assert money >= goal
         all_calls.append(
             (goal, start_time, best_state.time, time.perf_counter(), time_untill_goal)
@@ -267,11 +273,17 @@ class Game:
                 money = max_reachable_in(i, self.income_mult)
                 mult_at_i = self.get_ascend_value(money)
                 # if we don't gain substancially from ascending
-                if mult_at_i < self.income_mult * 1.01:
+                if mult_at_i < self.income_mult * 1.1:
                     # remove all to_check that are smaller than i
                     to_check = [x for x in to_check if x > i]
                     continue
-                # check if we have a lower multiplier and less time left than what we know to be the best
+                # check if we have a lower multiplier and less time left than any of the steps in what we
+                # know to be the best
+
+                # update mult
+                current_total_step = start_time + i
+                best_state.update_mult(current_total_step, mult_at_i)
+
                 breakout = False
                 for ascend_combo in best_state.ascends:
                     time_left = best_state.time - start_time - i
@@ -281,6 +293,13 @@ class Game:
                     if less_mult and less_time:
                         breakout = True
                 if breakout:
+                    continue
+
+                # if we are lacking on mult we skip
+                if (
+                    current_total_step in best_state.best_mults
+                    and mult_at_i < best_state.best_mults[current_total_step]
+                ):
                     continue
                 # recursively check if ascending is worth it
                 ghost_game = self.__class__()
@@ -390,8 +409,8 @@ def main():
     pre = time.monotonic()
     for i in range(1, 100):
         game = Game()
-        sol = game.solve(1657 * i, 0)
-        solutions.append(sol)
+        ret = game.solve(1657 * i, 0)
+        solutions.append(ret.time)
     post = time.monotonic()
     print(post - pre)
 
@@ -405,7 +424,7 @@ def speed():
     game = Game()
     # game.non_ascend_solve(2000012784500, verbose=True)
     # max_reachable_in(2000000)
-    returner = game.solve(1_000_000, 0)
+    returner = game.solve(100_000_000, 0)
     num_steps = returner.time
     ascends = returner.ascends
     post = time.monotonic()
