@@ -130,6 +130,13 @@ class Game:
                     untill_goal,
                 )
 
+    def print_important_metrics(self) -> None:
+        print(f"Step: {self.step_:03}")
+        print(f"Money: {self.money:.6}")
+        print(f"Owned: {self.owned}")
+        print(f"Income: {self.income}")
+        print(f"Costs: {self.costs}\n")
+
     def time_untill(self, goal: float) -> float:
         if self.income == 0:
             return float("inf")
@@ -191,7 +198,7 @@ class Game:
             buy_strategy = self.optimal_play(goal)
             match buy_strategy:
                 case SavingStrategy.UNTIL_GOAL:
-                    self.step_ += math.ceil(self.time_untill(goal))
+                    self.step(math.ceil(self.time_untill(goal)))
                     break
                 case _:
                     while True:
@@ -218,7 +225,9 @@ class Game:
         """Returns the time it takes to reach the goal"""
         global num_calls
         global all_calls
-        time_untill_goal, _ = ghost_solve(goal, self.income_mult)
+        time_untill_goal, money = ghost_solve(goal, self.income_mult)
+        # print(time_untill_goal, goal, money)
+        assert money >= goal
         all_calls.append(
             (goal, start_time, best_time, time.perf_counter(), time_untill_goal)
         )
@@ -228,7 +237,7 @@ class Game:
             viable_ascends = []
             # find if any point before goal is reached with current multiplier is worth ascending
             # we don't bother checking if it is possible to reach with a limit of 1 step
-            end = math.floor(time_untill_goal) - 1
+            end = math.floor(time_untill_goal) - 2
             # check in sort of binary order, cutting parts that arae not worth ascending
             to_check = list(range(2, end))
             while to_check:
@@ -268,7 +277,8 @@ class Game:
                 # if ascending is worth it we add to candidate list
                 total_time = returner.time + i + start_time
                 if total_time < time_untill_goal:
-                    viable_ascends.append((total_time, i, mult_at_i))
+                    # print(total_time)
+                    viable_ascends.append((returner.time + i, i, mult_at_i, returner))
                 # update best time
                 if total_time < best_time:
                     best_time = total_time
@@ -277,9 +287,10 @@ class Game:
             if viable_ascends:
                 viable_ascends.sort(key=lambda x: x[0])
                 # viable_ascend_list.append(viable_ascends)
+                print(f"{start_time=}, {self.income_mult=} {viable_ascends=}\n")
                 return Returner(
                     viable_ascends[0][0],
-                    [start_time] + returner.ascends,
+                    [start_time] + viable_ascends[0][3].ascends,
                     [
                         AscendCombo(
                             start_time + viable_ascends[0][1], viable_ascends[0][2]
@@ -289,6 +300,7 @@ class Game:
                 )
 
         # if not worth ascending we return the time it took to reach the goal
+        # print(time_untill_goal + start_time)
         return Returner(
             time_untill_goal,  # remaining time untill goal
             [start_time],
@@ -428,7 +440,7 @@ def test():
 if __name__ == "__main__":
     speed()
 
-    # res = optimal_based_on_ascends([0, 9, 19], 32)
+    # res = optimal_based_on_ascends([0, 12, 19], 25)
     # print(res)
 
     # time_untill_goal, _ = ghost_solve(2_000_000, 1.0)
