@@ -15,24 +15,29 @@ Base.@kwdef mutable struct GameState
     inventory::Vector{Int} = zeros(size(RESOURCES))
 end
 
-
-function get_income(state::GameState)
-    total_inc = 0.0
-    for i in 1:length(state.inventory)
-        quantity = state.inventory[i]
-        total_inc += RESOURCES[i].yield_fn(quantity)
-    end
-    return total_inc
-end
+get_income(state::GameState) = sum(resource.yield_fn(q) for (resource, q) in zip(RESOURCES, state.inventory))
+get_cost(idx::Int, quantity::Int) = RESOURCES[idx].cost_fn(quantity)
+can_afford(state, idx) = state.money >= get_cost(idx, state.inventory[idx])
+get_stats(state::GameState) = println("Time: $(state.time) | Money: $(round(state.money, digits=2)) | Income: $(get_income(state))")
 
 function step!(state::GameState)
     state.money += get_income(state)
     state.time += 1
-
-    if state.time % 100 == 0
-        println("Time: $(state.time) | Money: $(round(state.money, digits=2)) | Income: $(get_income(state))")
-    end
+    iszero(state.time % 100) && get_stats(state)
 end
+
+
+function buy!(state::GameState, idx::Int)
+    if !checkbounds(Bool, RESOURCES, idx)
+        return false
+    end
+
+    can_afford(state, idx) || return false  # Return early if we can't afford it
+    state.money -= get_cost(idx, state.inventory[idx])
+    state.inventory[idx] += 1
+    return true
+end
+
 
 function main()
     game = GameState()
@@ -41,8 +46,9 @@ function main()
 
     game.inventory[1] = 1
 
-    for _ in 1:500
+    for s in 1:500
         step!(game)
+        iszero((s + 1) % 150) && buy!(game, 2)
     end
 
     println("Final Wealth: ", game.money)
