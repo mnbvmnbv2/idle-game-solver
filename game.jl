@@ -20,22 +20,17 @@ get_cost(idx::Int, quantity::Int) = RESOURCES[idx].cost_fn(quantity)
 can_afford(state, idx) = state.money >= get_cost(idx, state.inventory[idx])
 get_stats(state::GameState) = println("Time: $(state.time) | Money: $(round(state.money, digits=2)) | Income: $(get_income(state))")
 
-function step!(state::GameState)
-    state.money += get_income(state)
-    state.time += 1
-    iszero(state.time % 100) && get_stats(state)
+function step!(s::GameState)
+    s.money += get_income(s)
+    (s.time += 1) % 100 == 0 && get_stats(s)
 end
 
 
-function buy!(state::GameState, idx::Int)
-    if !checkbounds(Bool, RESOURCES, idx)
-        return false
-    end
+function buy!(s::GameState, idx::Int)
+    checkbounds(Bool, RESOURCES, idx) || return false
 
-    can_afford(state, idx) || return false  # Return early if we can't afford it
-    state.money -= get_cost(idx, state.inventory[idx])
-    state.inventory[idx] += 1
-    return true
+    price = get_cost(idx, s.inventory[idx])
+    s.money < price ? false : (s.money -= price; s.inventory[idx] += 1; true)
 end
 
 
