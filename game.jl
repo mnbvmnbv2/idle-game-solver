@@ -1,3 +1,4 @@
+# --- base structs ---
 struct Resource{F<:Function,G<:Function}
     name::String
     cost_fn::F   # Function: f(x) -> cost of the next unit
@@ -9,44 +10,74 @@ const RESOURCES = [
     Resource("Factory", q -> 100 * 1.2^q, q -> q >= 5 ? (30.0 * q) : (10.0 * q))
 ]
 
-Base.@kwdef mutable struct GameState
-    time::Int64 = 0
-    money::Float64 = 0.0
-    inventory::Vector{Int} = zeros(size(RESOURCES))
+struct GameState{N}
+    time::Int64
+    money::Float64
+    inventory::NTuple{N,Int}
 end
+
+GameState() = GameState(0, 0.0, (1, 0))
+
+# --- transitions and helpers ---
 
 get_income(state::GameState) = sum(resource.yield_fn(q) for (resource, q) in zip(RESOURCES, state.inventory))
 get_cost(idx::Int, quantity::Int) = RESOURCES[idx].cost_fn(quantity)
 can_afford(state, idx) = state.money >= get_cost(idx, state.inventory[idx])
 get_stats(state::GameState) = println("Time: $(state.time) | Money: $(round(state.money, digits=2)) | Income: $(get_income(state))")
 
-function step!(s::GameState)
-    s.money += get_income(s)
-    (s.time += 1) % 100 == 0 && get_stats(s)
+function step(s::GameState, ticks::Int=1)
+    new_money = s.money + (get_income(s) * ticks)
+    return GameState(s.time + ticks, new_money, s.inventory)
 end
 
-
-function buy!(s::GameState, idx::Int)
-    checkbounds(Bool, RESOURCES, idx) || return false
+function buy(s::GameState, idx::Int)
+    checkbounds(Bool, RESOURCES, idx) || return nothing
 
     price = get_cost(idx, s.inventory[idx])
-    s.money < price ? false : (s.money -= price; s.inventory[idx] += 1; true)
+
+    s.money < price && return nothing
+
+    new_inv = ntuple(i -> i == idx ? s.inventory[i] + 1 : s.inventory[i], length(s.inventory))
+
+    return GameState(s.time, s.money - price, new_inv)
 end
 
+# --- solver stuff ---
 
-function main()
+function time_to_goal(s::GameState, goal::Float64)
+    income = get_income(s)
+    income <= 0.0 && return Inf
+
+    remaining = max(0.0, goal - s.money)
+    return ceil(Int, remaining / income)
+end
+
+function main(goal::Float64=1000.0)
     game = GameState()
 
-    println("Starting simulation...")
+    to_goal = Inf
+    for s in 1:1000
+        ttg = time_to_goal(game, goal)
+        for r in 1:length(RESOURCES)
+            possible_game = buy(game, r)
+            if isnothing(possible_game)
+                continue
+            end
 
-    game.inventory[1] = 1
-
-    for s in 1:500
-        step!(game)
-        iszero((s + 1) % 150) && buy!(game, 2)
+            new_to_goal = time_to_goal(possible_game, goal)
+            if new_to_goal < ttg
+                game = possible_game
+                ttg = new_to_goal
+            end
+        end
+        game = step(game)
+        if game.money >= goal
+            to_goal = s
+            break
+        end
     end
 
-    println("Final Wealth: ", game.money)
+    println("Final Wealth: $(game.money) in $(to_goal)")
 end
 
 @time main()
