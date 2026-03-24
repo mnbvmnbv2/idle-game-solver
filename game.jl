@@ -52,11 +52,13 @@ function time_to_goal(s::GameState, goal::Float64)
     return ceil(Int, remaining / income)
 end
 
-function main(goal::Float64=1000.0)
+function main(goal::Float64=1e10)
     game = GameState()
 
     to_goal = Inf
-    for s in 1:1000
+    s = 0
+    while to_goal == Inf
+        s += 1
         ttg = time_to_goal(game, goal)
         for r in 1:length(RESOURCES)
             possible_game = buy(game, r)
