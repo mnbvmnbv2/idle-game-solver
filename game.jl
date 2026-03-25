@@ -28,8 +28,8 @@ GameState() = GameState(0, 0.0, (1, 0), nothing)
 # --- transitions and helpers ---
 
 get_income(state::GameState) = sum(resource.yield_fn(q) for (resource, q) in zip(RESOURCES, state.inventory))
-get_cost(idx::Int, quantity::Int) = RESOURCES[idx].cost_fn(quantity)
-can_afford(state, idx) = state.money >= get_cost(idx, state.inventory[idx])
+get_cost(idx::Int, s::GameState) = RESOURCES[idx].cost_fn(s.inventory[idx])
+can_afford(state, idx) = state.money >= get_cost(idx, state)
 get_stats(state::GameState) = println("Time: $(state.time) | Money: $(round(state.money, digits=2)) | Income: $(get_income(state))")
 
 function step(s::GameState, ticks::Int=1)
@@ -40,7 +40,7 @@ end
 function buy(s::GameState, idx::Int)
     checkbounds(Bool, RESOURCES, idx) || return nothing
 
-    price = get_cost(idx, s.inventory[idx])
+    price = get_cost(idx, s)
 
     s.money < price && return nothing
 
@@ -59,14 +59,22 @@ function time_to_money(s::GameState, money::Float64)::Int
     return ceil(Int, remaining / income)
 end
 
-function buy_order(s::GameState, orders::Vector{Int}, goal::Float64)
+function buy_order(s::GameState, orders::Vector, goal::Float64)
+    if isempty(orders)
+        return step(s, time_to_money(s, goal))
+    end
     for order in orders
         time_to_goal = time_to_money(s, goal)
-        time_to_resource = time_to_money(s, RESOURCES[order].cost_fn(s.inventory[order]))
+        time_to_resource = time_to_money(s, get_cost(order, s))
+        println("To goal $(time_to_goal) to r $(time_to_resource)")
         if time_to_goal < time_to_resource
             return step(s, time_to_goal)
+        else
+            s = step(s, time_to_resource)
+            s = buy(s, order)
         end
     end
+    return step(s, time_to_money(s, goal))
 end
 
 function get_history(s::GameState)
@@ -82,34 +90,26 @@ end
 function main(goal::Float64=1e10)
     game = GameState()
 
-    paths = Dict([nothing,] => time_to_money(game, goal))
+    paths = Dict()
+    queue = [[]]
+    best = Inf
+    best_orders = []
 
-    println(paths)
-
-    to_goal = Inf
-    level = 0
-    while level < 10
-        level += 1
-        ttg = time_to_money(game, goal)
-        for r in 1:length(RESOURCES)
-            possible_game = buy(game, r)
-            isnothing(possible_game) && continue
-
-            new_to_goal = time_to_money(possible_game, goal)
-            if new_to_goal < ttg
-                game = possible_game
-                ttg = new_to_goal
-            end
+    for iter in 1:100
+        orders = popfirst!(queue)
+        for idx in 1:length(RESOURCES)
+            push!(queue, [orders; idx])
         end
-        game = step(game)
-        if game.money >= goal
-            break
+        game = buy_order(GameState(), orders, goal)
+        paths[orders] = game.time
+        if game.time < best
+            best = game.time
+            best_orders = orders
         end
     end
 
-    println(get_history(game))
-
-    println("Final Wealth: $(game.money) in $(to_goal)")
+    println(paths)
+    println("Final Wealth: $(game.money) in $(best) with $(best_orders)")
 end
 
 @time main()
