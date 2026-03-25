@@ -66,7 +66,6 @@ function buy_order(s::GameState, orders::Vector, goal::Float64)
     for order in orders
         time_to_goal = time_to_money(s, goal)
         time_to_resource = time_to_money(s, get_cost(order, s))
-        println("To goal $(time_to_goal) to r $(time_to_resource)")
         if time_to_goal < time_to_resource
             return step(s, time_to_goal)
         else
