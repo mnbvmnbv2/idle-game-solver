@@ -1,3 +1,5 @@
+using DataStructures
+
 # --- base structs ---
 struct Resource{F<:Function,G<:Function}
     name::String
@@ -5,10 +7,10 @@ struct Resource{F<:Function,G<:Function}
     yield_fn::G  # Function: g(x) -> total production per second
 end
 
-const RESOURCES = [
+const RESOURCES = (
     Resource("Clicker", q -> 10 * 1.1^q, q -> 2.0 * q),
     Resource("Factory", q -> 100 * 1.2^q, q -> q >= 5 ? (30.0 * q) : (10.0 * q))
-]
+)
 
 struct History
     action_idx::Int
@@ -38,8 +40,6 @@ function step(s::GameState, ticks::Int=1)
 end
 
 function buy(s::GameState, idx::Int)
-    checkbounds(Bool, RESOURCES, idx) || return nothing
-
     price = get_cost(idx, s)
 
     s.money < price && return nothing
@@ -53,13 +53,13 @@ end
 
 function time_to_money(s::GameState, money::Float64)::Int
     income = get_income(s)
-    income <= 0.0 && return Inf
+    income <= 0.0 && return typemax(Int)
 
     remaining = max(0.0, money - s.money)
     return ceil(Int, remaining / income)
 end
 
-function buy_order(s::GameState, orders::Vector, goal::Float64)
+function buy_order(s::GameState, orders::Vector{Int}, goal::Float64)
     if isempty(orders)
         return step(s, time_to_money(s, goal))
     end
@@ -90,11 +90,12 @@ function main(goal::Float64=1e10)
     game = GameState()
 
     paths = Dict()
-    queue = [[]]
+    queue = Deque{Vector{Int}}()
+    push!(queue, Int[])
     best = Inf
     best_orders = []
 
-    for iter in 1:100
+    for iter in 1:100000
         orders = popfirst!(queue)
         for idx in 1:length(RESOURCES)
             push!(queue, [orders; idx])
@@ -107,7 +108,7 @@ function main(goal::Float64=1e10)
         end
     end
 
-    println(paths)
+    # println(paths)
     println("Final Wealth: $(game.money) in $(best) with $(best_orders)")
 end
 
