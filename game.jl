@@ -10,13 +10,20 @@ const RESOURCES = [
     Resource("Factory", q -> 100 * 1.2^q, q -> q >= 5 ? (30.0 * q) : (10.0 * q))
 ]
 
+struct History
+    action_idx::Int
+    time::Int
+    prev::Union{Nothing,History}
+end
+
 struct GameState{N}
     time::Int64
     money::Float64
     inventory::NTuple{N,Int}
+    history::Union{Nothing,History}
 end
 
-GameState() = GameState(0, 0.0, (1, 0))
+GameState() = GameState(0, 0.0, (1, 0), nothing)
 
 # --- transitions and helpers ---
 
@@ -27,7 +34,7 @@ get_stats(state::GameState) = println("Time: $(state.time) | Money: $(round(stat
 
 function step(s::GameState, ticks::Int=1)
     new_money = s.money + (get_income(s) * ticks)
-    return GameState(s.time + ticks, new_money, s.inventory)
+    return GameState(s.time + ticks, new_money, s.inventory, s.history)
 end
 
 function buy(s::GameState, idx::Int)
@@ -39,12 +46,12 @@ function buy(s::GameState, idx::Int)
 
     new_inv = ntuple(i -> i == idx ? s.inventory[i] + 1 : s.inventory[i], length(s.inventory))
 
-    return GameState(s.time, s.money - price, new_inv)
+    return GameState(s.time, s.money - price, new_inv, History(idx, s.time, s.history))
 end
 
 # --- solver stuff ---
 
-function time_to_money(s::GameState, money::Float64)
+function time_to_money(s::GameState, money::Float64)::Int
     income = get_income(s)
     income <= 0.0 && return Inf
 
@@ -52,13 +59,37 @@ function time_to_money(s::GameState, money::Float64)
     return ceil(Int, remaining / income)
 end
 
+function buy_order(s::GameState, orders::Vector{Int}, goal::Float64)
+    for order in orders
+        time_to_goal = time_to_money(s, goal)
+        time_to_resource = time_to_money(s, RESOURCES[order].cost_fn(s.inventory[order]))
+        if time_to_goal < time_to_resource
+            return step(s, time_to_goal)
+        end
+    end
+end
+
+function get_history(s::GameState)
+    log = []
+    curr = s.history
+    while !isnothing(curr)
+        push!(log, "Time $(curr.time): Bought $(RESOURCES[curr.action_idx].name)")
+        curr = curr.prev
+    end
+    return reverse(log)
+end
+
 function main(goal::Float64=1e10)
     game = GameState()
 
+    paths = Dict([nothing,] => time_to_money(game, goal))
+
+    println(paths)
+
     to_goal = Inf
-    s = 0
-    while to_goal == Inf
-        s += 1
+    level = 0
+    while level < 10
+        level += 1
         ttg = time_to_money(game, goal)
         for r in 1:length(RESOURCES)
             possible_game = buy(game, r)
@@ -72,10 +103,11 @@ function main(goal::Float64=1e10)
         end
         game = step(game)
         if game.money >= goal
-            to_goal = s
             break
         end
     end
+
+    println(get_history(game))
 
     println("Final Wealth: $(game.money) in $(to_goal)")
 end
