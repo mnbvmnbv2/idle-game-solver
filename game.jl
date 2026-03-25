@@ -44,11 +44,11 @@ end
 
 # --- solver stuff ---
 
-function time_to_goal(s::GameState, goal::Float64)
+function time_to_money(s::GameState, money::Float64)
     income = get_income(s)
     income <= 0.0 && return Inf
 
-    remaining = max(0.0, goal - s.money)
+    remaining = max(0.0, money - s.money)
     return ceil(Int, remaining / income)
 end
 
@@ -59,14 +59,12 @@ function main(goal::Float64=1e10)
     s = 0
     while to_goal == Inf
         s += 1
-        ttg = time_to_goal(game, goal)
+        ttg = time_to_money(game, goal)
         for r in 1:length(RESOURCES)
             possible_game = buy(game, r)
-            if isnothing(possible_game)
-                continue
-            end
+            isnothing(possible_game) && continue
 
-            new_to_goal = time_to_goal(possible_game, goal)
+            new_to_goal = time_to_money(possible_game, goal)
             if new_to_goal < ttg
                 game = possible_game
                 ttg = new_to_goal
