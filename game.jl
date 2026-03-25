@@ -94,8 +94,9 @@ function main(goal::Float64=1e10)
     push!(queue, Int[])
     best = Inf
     best_orders = []
+    best_game = nothing
 
-    for iter in 1:100000
+    for iter in 1:1_000_000
         orders = popfirst!(queue)
         for idx in 1:length(RESOURCES)
             push!(queue, [orders; idx])
@@ -105,10 +106,12 @@ function main(goal::Float64=1e10)
         if game.time < best
             best = game.time
             best_orders = orders
+            best_game = game
         end
     end
 
-    # println(paths)
+    println("Best history $(get_history(best_game))")
+
     println("Final Wealth: $(game.money) in $(best) with $(best_orders)")
 end
 
