@@ -98,9 +98,7 @@ function main(goal::Float64=1e10)
         game, order = popfirst!(queue)
         game, time, done = buy_order(game, order, goal)
 
-        if game.time >= best
-            continue
-        end
+        game.time >= best && continue
 
         if game.time < get(memory, game.inventory, typemax(Int64))
             memory[game.inventory] = game.time
