@@ -68,7 +68,7 @@ function buy_order(s::GameState, order::Int, goal::Float64)
         s = step(s, time_to_resource)
         s = buy(s, order)
     end
-    return (game=s, time=time_to_money(s, goal))
+    return (game=s, time=s.time + time_to_money(s, goal))
 end
 
 function get_history(s::GameState)
@@ -81,21 +81,32 @@ function get_history(s::GameState)
     return reverse(log)
 end
 
+
 function main(goal::Float64=1e10)
     game = GameState()
 
+    memory = Dict{NTuple{2,Int},Int64}()
+
     queue = Deque{Tuple{GameState{2},Int64}}()
+    for idx in 1:length(RESOURCES)
+        push!(queue, (game, idx))
+    end
     best = Inf
     best_game = nothing
 
     for iter in 1:1_000_000
-        for idx in 1:length(RESOURCES)
-            push!(queue, (game, idx))
-        end
         game, order = popfirst!(queue)
         game, time = buy_order(game, order, goal)
-        if game.time + time < best
-            best = game.time + time
+
+        if game.time < get(memory, game.inventory, typemax(Int64))
+            memory[game.inventory] = game.time
+            for idx in 1:length(RESOURCES)
+                push!(queue, (game, idx))
+            end
+        end
+
+        if time < best
+            best = time
             best_game = game
         end
     end
