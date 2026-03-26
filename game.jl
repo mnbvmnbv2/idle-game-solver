@@ -61,26 +61,26 @@ end
 
 function buy_order(s::GameState, orders::Vector{Int}, goal::Float64)
     if isempty(orders)
-        return step(s, time_to_money(s, goal))
+        return (game=s, time=time_to_money(s, goal))
     end
     for order in orders
         time_to_goal = time_to_money(s, goal)
         time_to_resource = time_to_money(s, get_cost(order, s))
         if time_to_goal < time_to_resource
-            return step(s, time_to_goal)
+            return (game=s, time=time_to_goal)
         else
             s = step(s, time_to_resource)
             s = buy(s, order)
         end
     end
-    return step(s, time_to_money(s, goal))
+    return (game=s, time=time_to_money(s, goal))
 end
 
 function get_history(s::GameState)
     log = []
     curr = s.history
     while !isnothing(curr)
-        push!(log, "Time $(curr.time): Bought $(RESOURCES[curr.action_idx].name)")
+        push!(log, "T$(curr.time): $(RESOURCES[curr.action_idx].name)")
         curr = curr.prev
     end
     return reverse(log)
@@ -89,30 +89,31 @@ end
 function main(goal::Float64=1e10)
     game = GameState()
 
-    paths = Dict()
-    queue = Deque{Vector{Int}}()
-    push!(queue, Int[])
+    queue = Deque{Tuple{GameState{2},Int64}}()
+    for idx in 1:length(RESOURCES)
+        push!(queue, (GameState(), idx))
+    end
     best = Inf
-    best_orders = []
     best_game = nothing
 
     for iter in 1:1_000_000
-        orders = popfirst!(queue)
+        game, order = popfirst!(queue)
+        game, time = buy_order(game, [order], goal)
         for idx in 1:length(RESOURCES)
-            push!(queue, [orders; idx])
+            push!(queue, (game, idx))
         end
-        game = buy_order(GameState(), orders, goal)
-        paths[orders] = game.time
-        if game.time < best
-            best = game.time
-            best_orders = orders
+        if game.time + time < best
+            best = game.time + time
             best_game = game
         end
     end
 
+    # finish best game
+    best_game = step(best_game, time_to_money(best_game, goal))
+
     println("Best history $(get_history(best_game))")
 
-    println("Final Wealth: $(game.money) in $(best) with $(best_orders)")
+    println("Final Wealth: $(best_game.money) in $(best)")
 end
 
 @time main()
