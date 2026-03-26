@@ -59,19 +59,14 @@ function time_to_money(s::GameState, money::Float64)::Int
     return ceil(Int, remaining / income)
 end
 
-function buy_order(s::GameState, orders::Vector{Int}, goal::Float64)
-    if isempty(orders)
-        return (game=s, time=time_to_money(s, goal))
-    end
-    for order in orders
-        time_to_goal = time_to_money(s, goal)
-        time_to_resource = time_to_money(s, get_cost(order, s))
-        if time_to_goal < time_to_resource
-            return (game=s, time=time_to_goal)
-        else
-            s = step(s, time_to_resource)
-            s = buy(s, order)
-        end
+function buy_order(s::GameState, order::Int, goal::Float64)
+    time_to_goal = time_to_money(s, goal)
+    time_to_resource = time_to_money(s, get_cost(order, s))
+    if time_to_goal < time_to_resource
+        return (game=s, time=time_to_goal)
+    else
+        s = step(s, time_to_resource)
+        s = buy(s, order)
     end
     return (game=s, time=time_to_money(s, goal))
 end
@@ -98,7 +93,7 @@ function main(goal::Float64=1e10)
             push!(queue, (game, idx))
         end
         game, order = popfirst!(queue)
-        game, time = buy_order(game, [order], goal)
+        game, time = buy_order(game, order, goal)
         if game.time + time < best
             best = game.time + time
             best_game = game
