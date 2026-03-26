@@ -63,12 +63,12 @@ function buy_order(s::GameState, order::Int, goal::Float64)
     time_to_goal = time_to_money(s, goal)
     time_to_resource = time_to_money(s, get_cost(order, s))
     if time_to_goal < time_to_resource
-        return (game=s, time=time_to_goal)
+        return (game=s, time=s.time + time_to_goal, done=true)
     else
         s = step(s, time_to_resource)
         s = buy(s, order)
     end
-    return (game=s, time=s.time + time_to_money(s, goal))
+    return (game=s, time=s.time + time_to_money(s, goal), done=false)
 end
 
 function get_history(s::GameState)
@@ -96,12 +96,14 @@ function main(goal::Float64=1e10)
 
     for iter in 1:1_000_000
         game, order = popfirst!(queue)
-        game, time = buy_order(game, order, goal)
+        game, time, done = buy_order(game, order, goal)
 
         if game.time < get(memory, game.inventory, typemax(Int64))
             memory[game.inventory] = game.time
-            for idx in 1:length(RESOURCES)
-                push!(queue, (game, idx))
+            if !done
+                for idx in 1:length(RESOURCES)
+                    push!(queue, (game, idx))
+                end
             end
         end
 
