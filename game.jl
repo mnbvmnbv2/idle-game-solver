@@ -90,18 +90,15 @@ function main(goal::Float64=1e10)
     game = GameState()
 
     queue = Deque{Tuple{GameState{2},Int64}}()
-    for idx in 1:length(RESOURCES)
-        push!(queue, (GameState(), idx))
-    end
     best = Inf
     best_game = nothing
 
     for iter in 1:1_000_000
-        game, order = popfirst!(queue)
-        game, time = buy_order(game, [order], goal)
         for idx in 1:length(RESOURCES)
             push!(queue, (game, idx))
         end
+        game, order = popfirst!(queue)
+        game, time = buy_order(game, [order], goal)
         if game.time + time < best
             best = game.time + time
             best_game = game
