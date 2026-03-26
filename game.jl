@@ -72,7 +72,7 @@ function buy_order(s::GameState, order::Int, goal::Float64)
 end
 
 function get_history(s::GameState)
-    log = []
+    log = Vector{String}()
     curr = s.history
     while !isnothing(curr)
         push!(log, "T$(curr.time): $(RESOURCES[curr.action_idx].name)")
@@ -97,6 +97,10 @@ function main(goal::Float64=1e10)
     for iter in 1:1_000_000
         game, order = popfirst!(queue)
         game, time, done = buy_order(game, order, goal)
+
+        if game.time >= best
+            continue
+        end
 
         if game.time < get(memory, game.inventory, typemax(Int64))
             memory[game.inventory] = game.time
