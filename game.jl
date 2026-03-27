@@ -35,8 +35,7 @@ can_afford(state, idx) = state.money >= get_cost(idx, state)
 get_stats(state::GameState) = println("Time: $(state.time) | Money: $(round(state.money, digits=2)) | Income: $(get_income(state))")
 
 function step(s::GameState, ticks::Int=1)
-    new_money = s.money + (get_income(s) * ticks)
-    return GameState(s.time + ticks, new_money, s.inventory, s.history)
+    return GameState(s.time + ticks, s.money + (get_income(s) * ticks), s.inventory, s.history)
 end
 
 function buy(s::GameState, idx::Int)
@@ -55,8 +54,7 @@ function time_to_money(s::GameState, money::Float64)::Int
     income = get_income(s)
     income <= 0.0 && return typemax(Int)
 
-    remaining = max(0.0, money - s.money)
-    return ceil(Int, remaining / income)
+    return ceil(Int, max(0.0, money - s.money) / income)
 end
 
 function buy_order(s::GameState, order::Int, goal::Float64)
@@ -64,10 +62,8 @@ function buy_order(s::GameState, order::Int, goal::Float64)
     time_to_resource = time_to_money(s, get_cost(order, s))
     if time_to_goal <= time_to_resource
         return (game=s, time=s.time + time_to_goal, done=true)
-    else
-        s = step(s, time_to_resource)
-        s = buy(s, order)
     end
+    s = buy(step(s, time_to_resource), order)
     return (game=s, time=s.time + time_to_money(s, goal), done=false)
 end
 
