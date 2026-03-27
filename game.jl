@@ -62,7 +62,7 @@ end
 function buy_order(s::GameState, order::Int, goal::Float64)
     time_to_goal = time_to_money(s, goal)
     time_to_resource = time_to_money(s, get_cost(order, s))
-    if time_to_goal < time_to_resource
+    if time_to_goal <= time_to_resource
         return (game=s, time=s.time + time_to_goal, done=true)
     else
         s = step(s, time_to_resource)
@@ -83,35 +83,41 @@ end
 
 
 function main(goal::Float64=1e10)
-    game = GameState()
+    next_game = GameState()
 
-    memory = Dict{NTuple{2,Int},Int64}()
+    memory = Dict{NTuple{2,Int},Tuple{Int64,Float64}}()
 
     queue = Deque{Tuple{GameState{2},Int64}}()
     for idx in 1:length(RESOURCES)
-        push!(queue, (game, idx))
+        push!(queue, (next_game, idx))
     end
-    best = Inf
-    best_game = nothing
+    best_finish_time = next_game.time + time_to_money(next_game, goal)
+    best_game = next_game
 
+    # while !isempty(queue)
     for iter in 1:1_000_000
-        game, order = popfirst!(queue)
-        game, time, done = buy_order(game, order, goal)
+        curr_game, order = popfirst!(queue)
 
-        game.time >= best && continue
+        next_game, time, done = buy_order(curr_game, order, goal)
 
-        if game.time < get(memory, game.inventory, typemax(Int64))
-            memory[game.inventory] = game.time
-            if !done
+        is_worse_than_parent = time >= curr_game.time + time_to_money(curr_game, goal)
+        is_worse_than_parent && continue
+
+        best_mem_time, best_mem_money = get(memory, next_game.inventory, (typemax(Int64), 0.0))
+        is_better_than_memory = (next_game.time < best_mem_time) ||
+                                (next_game.time == best_mem_time && next_game.money > best_mem_money)
+        if is_better_than_memory
+            memory[next_game.inventory] = (next_game.time, next_game.money)
+            if !done && next_game.time < best_finish_time
                 for idx in 1:length(RESOURCES)
-                    push!(queue, (game, idx))
+                    push!(queue, (next_game, idx))
                 end
             end
         end
 
-        if time < best
-            best = time
-            best_game = game
+        if time < best_finish_time
+            best_finish_time = time
+            best_game = next_game
         end
     end
 
@@ -120,7 +126,7 @@ function main(goal::Float64=1e10)
 
     println("Best history $(get_history(best_game))")
 
-    println("Final Wealth: $(best_game.money) in $(best)")
+    println("Final Wealth: $(best_game.money) in $(best_finish_time)")
 end
 
 @time main()
