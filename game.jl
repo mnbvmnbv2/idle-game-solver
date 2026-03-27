@@ -12,20 +12,13 @@ const RESOURCES = (
     Resource("Factory", q -> 100 * 1.2^q, q -> q >= 5 ? (30.0 * q) : (10.0 * q))
 )
 
-struct History
-    action_idx::Int
-    time::Int
-    prev::Union{Nothing,History}
-end
-
 struct GameState{N}
     time::Int64
     money::Float64
     inventory::NTuple{N,Int}
-    history::Union{Nothing,History}
 end
 
-GameState() = GameState(0, 0.0, (1, 0), nothing)
+GameState() = GameState(0, 0.0, (1, 0))
 
 # --- transitions and helpers ---
 
@@ -35,7 +28,7 @@ can_afford(state, idx) = state.money >= get_cost(idx, state)
 get_stats(state::GameState) = println("Time: $(state.time) | Money: $(round(state.money, digits=2)) | Income: $(get_income(state))")
 
 function step(s::GameState, ticks::Int=1)
-    return GameState(s.time + ticks, s.money + (get_income(s) * ticks), s.inventory, s.history)
+    return GameState(s.time + ticks, s.money + (get_income(s) * ticks), s.inventory)
 end
 
 function buy(s::GameState, idx::Int)
@@ -45,7 +38,7 @@ function buy(s::GameState, idx::Int)
 
     new_inv = ntuple(i -> i == idx ? s.inventory[i] + 1 : s.inventory[i], length(s.inventory))
 
-    return GameState(s.time, s.money - price, new_inv, History(idx, s.time, s.history))
+    return GameState(s.time, s.money - price, new_inv)
 end
 
 # --- solver stuff ---
@@ -67,20 +60,9 @@ function buy_order(s::GameState, order::Int, goal::Float64)
     return (game=s, time=s.time + time_to_money(s, goal), done=false)
 end
 
-function get_history(s::GameState)
-    log = Vector{String}()
-    curr = s.history
-    while !isnothing(curr)
-        push!(log, "T$(curr.time): $(RESOURCES[curr.action_idx].name)")
-        curr = curr.prev
-    end
-    return reverse(log)
-end
 
-
-function main(goal::Float64=1e10)
+function bfs(goal::Float64=1e10)
     next_game = GameState()
-
     memory = Dict{NTuple{2,Int},Tuple{Int64,Float64}}()
 
     queue = Deque{Tuple{GameState{2},Int64}}()
@@ -90,8 +72,9 @@ function main(goal::Float64=1e10)
     best_finish_time = next_game.time + time_to_money(next_game, goal)
     best_game = next_game
 
-    # while !isempty(queue)
-    for iter in 1:1_000_000
+    iter = 0
+    while !isempty(queue) && iter < 1_000_000
+        iter += 1
         curr_game, order = popfirst!(queue)
 
         next_game, time, done = buy_order(curr_game, order, goal)
@@ -120,9 +103,55 @@ function main(goal::Float64=1e10)
     # finish best game
     best_game = step(best_game, time_to_money(best_game, goal))
 
-    println("Best history $(get_history(best_game))")
+    println("Final Wealth: $(best_game.money) in $(best_finish_time)")
+end
+
+function best_first(goal::Float64=1e10)
+    start_game = GameState()
+
+    memory = Dict{NTuple{2,Int},Tuple{Int64,Float64}}()
+
+    best_finish_time = start_game.time + time_to_money(start_game, goal)
+    best_game = start_game
+
+    pq = PriorityQueue{Tuple{GameState{2},Int},Int}()
+    for idx in 1:length(RESOURCES)
+        enqueue!(pq, (start_game, idx) => 0)
+    end
+
+    iter = 0
+    while !isempty(pq) && iter < 1_000_000
+        iter += 1
+        (curr_game, order), projected_time = dequeue_pair!(pq)
+
+        next_game, finish_time, done = buy_order(curr_game, order, goal)
+
+        is_worse_than_parent = finish_time >= curr_game.time + time_to_money(curr_game, goal)
+        is_worse_than_parent && continue
+
+        best_mem_time, best_mem_money = get(memory, next_game.inventory, (typemax(Int64), 0.0))
+        is_better_than_memory = (next_game.time < best_mem_time) ||
+                                (next_game.time == best_mem_time && next_game.money > best_mem_money)
+        if is_better_than_memory
+            memory[next_game.inventory] = (next_game.time, next_game.money)
+            if !done && next_game.time < best_finish_time
+                for idx in 1:length(RESOURCES)
+                    enqueue!(pq, (next_game, idx) => finish_time)
+                end
+            end
+        end
+
+        if finish_time < best_finish_time
+            best_finish_time = finish_time
+            best_game = next_game
+            println("Iter: $(iter): New Best Time Found: $best_finish_time")
+        end
+    end
+
+    # finish best game
+    best_game = step(best_game, time_to_money(best_game, goal))
 
     println("Final Wealth: $(best_game.money) in $(best_finish_time)")
 end
 
-@time main()
+@time best_first()
