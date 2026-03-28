@@ -60,6 +60,26 @@ function buy_order(s::GameState, order::Int, goal::Float64)
     return (game=s, time=s.time + time_to_money(s, goal), done=false)
 end
 
+function reconstruct_path(memory, final_inventory)
+    log = String[]
+    curr_inv = final_inventory
+
+    while true
+        mem_entry = get(memory, curr_inv, nothing)
+        isnothing(mem_entry) && break
+
+        time, money, parent_inv, action = mem_entry
+        parent_inv = ntuple(i -> i == action ? parent_inv[i] - 1 : parent_inv[i], length(parent_inv))
+
+        action == 0 && break
+
+        push!(log, "Reached $curr_inv by buying $(RESOURCES[action].name) at time $time")
+
+        curr_inv = parent_inv
+    end
+    return reverse(log)
+end
+
 
 function bfs(goal::Float64=1e10)
     next_game = GameState()
@@ -109,7 +129,8 @@ end
 function best_first(goal::Float64=1e10)
     start_game = GameState()
 
-    memory = Dict{NTuple{2,Int},Tuple{Int64,Float64}}()
+    memory = Dict{NTuple{2,Int},Tuple{Int64,Float64,NTuple{2,Int},Int}}()
+    memory[start_game.inventory] = (start_game.time, start_game.money, start_game.inventory, 0)
 
     best_finish_time = start_game.time + time_to_money(start_game, goal)
     best_game = start_game
@@ -133,7 +154,7 @@ function best_first(goal::Float64=1e10)
         is_better_than_memory = (next_game.time < best_mem_time) ||
                                 (next_game.time == best_mem_time && next_game.money > best_mem_money)
         if is_better_than_memory
-            memory[next_game.inventory] = (next_game.time, next_game.money)
+            memory[next_game.inventory] = (next_game.time, next_game.money, next_game.inventory, order)
             if !done && next_game.time < best_finish_time
                 for idx in 1:length(RESOURCES)
                     enqueue!(pq, (next_game, idx) => finish_time)
@@ -150,6 +171,8 @@ function best_first(goal::Float64=1e10)
 
     # finish best game
     best_game = step(best_game, time_to_money(best_game, goal))
+
+    println("\nBest history:\n", join(reconstruct_path(memory, best_game.inventory), "\n"))
 
     println("Final Wealth: $(best_game.money) in $(best_finish_time)")
 end
