@@ -128,7 +128,7 @@ function dijkstra(goal::Float64=1e11)
         if finish_time < best_finish_time
             best_finish_time = finish_time
             best_game = next_game
-            println("Iter: $(iter): New Best Time Found: $best_finish_time")
+            println("Iter: $iter: New Best Time Found: $best_finish_time")
         end
     end
 
@@ -137,9 +137,9 @@ function dijkstra(goal::Float64=1e11)
 
     println("\nBest history:\n", join(reconstruct_path(memory, best_game.inventory), "\n"))
 
-    println("Final Wealth: $(best_game.money) in $(best_finish_time)")
+    println("Final Wealth: $(best_game.money) in $best_finish_time")
 
-    println("Did $(iter) iterations")
+    println("Did $iter iterations")
 end
 
 @time dijkstra()
