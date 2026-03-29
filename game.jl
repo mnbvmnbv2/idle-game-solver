@@ -28,12 +28,7 @@ GameState() = GameState(0, 0.0, ntuple(i -> i == 1 ? 1 : 0, NUM_RES))
 
 get_income(state::GameState) = sum(resource.yield_fn(q) for (resource, q) in zip(RESOURCES, state.inventory))
 get_cost(idx::Int, s::GameState) = RESOURCES[idx].cost_fn(s.inventory[idx])
-can_afford(state, idx) = state.money >= get_cost(idx, state)
-get_stats(state::GameState) = println("Time: $(state.time) | Money: $(round(state.money, digits=2)) | Income: $(get_income(state))")
-
-function step(s::GameState, ticks::Int=1)
-    return GameState(s.time + ticks, s.money + (get_income(s) * ticks), s.inventory)
-end
+step(s::GameState, ticks::Int=1) = GameState(s.time + ticks, s.money + (get_income(s) * ticks), s.inventory)
 
 function buy(s::GameState, idx::Int)
     price = get_cost(idx, s)
@@ -44,6 +39,8 @@ function buy(s::GameState, idx::Int)
 
     return GameState(s.time, s.money - price, new_inv)
 end
+
+get_stats(state::GameState) = println("Time: $(state.time) | Money: $(round(state.money, digits=2)) | Income: $(get_income(state))")
 
 # --- solver stuff ---
 
