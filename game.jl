@@ -135,7 +135,7 @@ struct QueueNode{N}
 end
 Base.isless(a::QueueNode, b::QueueNode) = a.priority < b.priority
 
-function best_first(goal::Float64=1e7)
+function best_first(goal::Float64=1e15)
     start_game = GameState()
 
     memory = Dict{NTuple{2,Int},Tuple{Int64,Float64,NTuple{2,Int},Int}}()
@@ -188,6 +188,8 @@ function best_first(goal::Float64=1e7)
     println("\nBest history:\n", join(reconstruct_path(memory, best_game.inventory), "\n"))
 
     println("Final Wealth: $(best_game.money) in $(best_finish_time)")
+
+    println("Did $(iter) iterations")
 end
 
 @time best_first()
