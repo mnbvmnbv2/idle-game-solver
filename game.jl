@@ -83,7 +83,7 @@ end
 
 function bfs(goal::Float64=1e10)
     next_game = GameState()
-    memory = Dict{NTuple{2,Int},Tuple{Int64,Float64}}()
+    memory = Dict{NTuple{2,Int},Tuple{Int64,Float64,NTuple{2,Int},Int}}()
 
     queue = Deque{Tuple{GameState{2},Int64}}()
     for idx in 1:length(RESOURCES)
@@ -106,7 +106,7 @@ function bfs(goal::Float64=1e10)
         is_better_than_memory = (next_game.time < best_mem_time) ||
                                 (next_game.time == best_mem_time && next_game.money > best_mem_money)
         if is_better_than_memory
-            memory[next_game.inventory] = (next_game.time, next_game.money)
+            memory[next_game.inventory] = (next_game.time, next_game.money, next_game.inventory, order)
             if !done && next_game.time < best_finish_time
                 for idx in 1:length(RESOURCES)
                     push!(queue, (next_game, idx))
@@ -123,10 +123,19 @@ function bfs(goal::Float64=1e10)
     # finish best game
     best_game = step(best_game, time_to_money(best_game, goal))
 
+    println("\nBest history:\n", join(reconstruct_path(memory, best_game.inventory), "\n"))
+
     println("Final Wealth: $(best_game.money) in $(best_finish_time)")
 end
 
-function best_first(goal::Float64=1e10)
+struct QueueNode{N}
+    priority::Int
+    game::GameState{N}
+    order::Int
+end
+Base.isless(a::QueueNode, b::QueueNode) = a.priority < b.priority
+
+function best_first(goal::Float64=1e7)
     start_game = GameState()
 
     memory = Dict{NTuple{2,Int},Tuple{Int64,Float64,NTuple{2,Int},Int}}()
@@ -135,29 +144,33 @@ function best_first(goal::Float64=1e10)
     best_finish_time = start_game.time + time_to_money(start_game, goal)
     best_game = start_game
 
-    pq = PriorityQueue{Tuple{GameState{2},Int},Int}()
+    pq = BinaryMinHeap{QueueNode{2}}()
     for idx in 1:length(RESOURCES)
-        enqueue!(pq, (start_game, idx) => 0)
+        push!(pq, QueueNode(start_game.time, start_game, idx))
     end
 
     iter = 0
     while !isempty(pq) && iter < 1_000_000
         iter += 1
-        (curr_game, order), projected_time = dequeue_pair!(pq)
+        node = pop!(pq)
+        curr_game = node.game
+        order = node.order
 
         next_game, finish_time, done = buy_order(curr_game, order, goal)
 
         is_worse_than_parent = finish_time >= curr_game.time + time_to_money(curr_game, goal)
         is_worse_than_parent && continue
 
-        best_mem_time, best_mem_money = get(memory, next_game.inventory, (typemax(Int64), 0.0))
+        mem_entry = get(memory, next_game.inventory, (typemax(Int64), 0.0, (0, 0), 0))
+        best_mem_time = mem_entry[1]
+        best_mem_money = mem_entry[2]
         is_better_than_memory = (next_game.time < best_mem_time) ||
                                 (next_game.time == best_mem_time && next_game.money > best_mem_money)
         if is_better_than_memory
             memory[next_game.inventory] = (next_game.time, next_game.money, next_game.inventory, order)
             if !done && next_game.time < best_finish_time
                 for idx in 1:length(RESOURCES)
-                    enqueue!(pq, (next_game, idx) => finish_time)
+                    push!(pq, QueueNode(next_game.time, next_game, idx))
                 end
             end
         end
