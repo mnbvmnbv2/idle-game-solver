@@ -135,7 +135,7 @@ struct QueueNode{N}
 end
 Base.isless(a::QueueNode, b::QueueNode) = a.priority < b.priority
 
-function best_first(goal::Float64=1e15)
+function dijkstra(goal::Float64=1e15)
     start_game = GameState()
 
     memory = Dict{NTuple{2,Int},Tuple{Int64,Float64,NTuple{2,Int},Int}}()
@@ -192,4 +192,4 @@ function best_first(goal::Float64=1e15)
     println("Did $(iter) iterations")
 end
 
-@time best_first()
+@time dijkstra()
