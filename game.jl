@@ -161,7 +161,7 @@ function dijkstra(goal::Float64=1e15)
         is_worse_than_parent = finish_time >= curr_game.time + time_to_money(curr_game, goal)
         is_worse_than_parent && continue
 
-        mem_entry = get(memory, next_game.inventory, (typemax(Int64), 0.0, (0, 0), 0))
+        mem_entry = get(memory, next_game.inventory, (typemax(Int64), -1.0, (0, 0), 0))
         best_mem_time = mem_entry[1]
         best_mem_money = mem_entry[2]
         is_better_than_memory = (next_game.time < best_mem_time) ||
