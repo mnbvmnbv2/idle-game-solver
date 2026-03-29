@@ -10,7 +10,7 @@ end
 const RESOURCES = (
     Resource("Clicker", q -> 10 * 1.1^q, q -> 2.0 * q),
     Resource("Factory", q -> 100 * 1.2^q, q -> q >= 5 ? (30.0 * q) : (10.0 * q)),
-    Resource("Depot", q -> 1000 * 1.3^q, q -> q >= 210.0 * q)
+    Resource("Depot", q -> 1000 * 1.3^q, q -> 210.0 * q)
 )
 
 const NUM_RES = length(RESOURCES)
@@ -54,9 +54,8 @@ end
 function buy_order(s::GameState, order::Int, goal::Float64)
     time_to_goal = time_to_money(s, goal)
     time_to_resource = time_to_money(s, get_cost(order, s))
-    if time_to_goal <= time_to_resource
-        return (game=s, time=s.time + time_to_goal, done=true)
-    end
+    time_to_goal <= time_to_resource && return (game=s, time=s.time + time_to_goal, done=true)
+
     s = buy(step(s, time_to_resource), order)
     return (game=s, time=s.time + time_to_money(s, goal), done=false)
 end
@@ -88,7 +87,7 @@ struct QueueNode
 end
 Base.isless(a::QueueNode, b::QueueNode) = a.priority < b.priority
 
-function dijkstra(goal::Float64=1e15)
+function dijkstra(goal::Float64=1e11)
     start_game = GameState()
 
     memory = Dict{Inventory,Tuple{Int64,Float64,Inventory,Int}}()
