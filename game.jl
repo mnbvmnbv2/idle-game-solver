@@ -9,16 +9,20 @@ end
 
 const RESOURCES = (
     Resource("Clicker", q -> 10 * 1.1^q, q -> 2.0 * q),
-    Resource("Factory", q -> 100 * 1.2^q, q -> q >= 5 ? (30.0 * q) : (10.0 * q))
+    Resource("Factory", q -> 100 * 1.2^q, q -> q >= 5 ? (30.0 * q) : (10.0 * q)),
+    Resource("Depot", q -> 1000 * 1.3^q, q -> q >= 210.0 * q)
 )
 
-struct GameState{N}
+const NUM_RES = length(RESOURCES)
+const Inventory = NTuple{NUM_RES,Int}
+
+struct GameState
     time::Int64
     money::Float64
-    inventory::NTuple{N,Int}
+    inventory::Inventory
 end
 
-GameState() = GameState(0, 0.0, (1, 0))
+GameState() = GameState(0, 0.0, ntuple(i -> i == 1 ? 1 : 0, NUM_RES))
 
 # --- transitions and helpers ---
 
@@ -83,9 +87,9 @@ end
 
 function bfs(goal::Float64=1e10)
     next_game = GameState()
-    memory = Dict{NTuple{2,Int},Tuple{Int64,Float64,NTuple{2,Int},Int}}()
+    memory = Dict{Inventory,Tuple{Int64,Float64,Inventory,Int}}()
 
-    queue = Deque{Tuple{GameState{2},Int64}}()
+    queue = Deque{Tuple{GameState,Int64}}()
     for idx in 1:length(RESOURCES)
         push!(queue, (next_game, idx))
     end
@@ -128,9 +132,9 @@ function bfs(goal::Float64=1e10)
     println("Final Wealth: $(best_game.money) in $(best_finish_time)")
 end
 
-struct QueueNode{N}
+struct QueueNode
     priority::Int
-    game::GameState{N}
+    game::GameState
     order::Int
 end
 Base.isless(a::QueueNode, b::QueueNode) = a.priority < b.priority
@@ -138,13 +142,13 @@ Base.isless(a::QueueNode, b::QueueNode) = a.priority < b.priority
 function dijkstra(goal::Float64=1e15)
     start_game = GameState()
 
-    memory = Dict{NTuple{2,Int},Tuple{Int64,Float64,NTuple{2,Int},Int}}()
+    memory = Dict{Inventory,Tuple{Int64,Float64,Inventory,Int}}()
     memory[start_game.inventory] = (start_game.time, start_game.money, start_game.inventory, 0)
 
     best_finish_time = start_game.time + time_to_money(start_game, goal)
     best_game = start_game
 
-    pq = BinaryMinHeap{QueueNode{2}}()
+    pq = BinaryMinHeap{QueueNode}()
     for idx in 1:length(RESOURCES)
         push!(pq, QueueNode(start_game.time, start_game, idx))
     end
@@ -153,6 +157,7 @@ function dijkstra(goal::Float64=1e15)
     while !isempty(pq) && iter < 1_000_000
         iter += 1
         node = pop!(pq)
+        node.priority >= best_finish_time && continue
         curr_game = node.game
         order = node.order
 
