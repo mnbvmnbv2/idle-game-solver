@@ -1,6 +1,6 @@
 using DataStructures
 
-# --- base structs ---
+# --- base ---
 struct Resource{F<:Function,G<:Function}
     name::String
     cost_fn::F   # Function: f(x) -> cost of the next unit
@@ -12,7 +12,6 @@ const RESOURCES = (
     Resource("Factory", q -> 100 * 1.2^q, q -> q >= 5 ? (30.0 * q) : (10.0 * q)),
     Resource("Depot", q -> 1000 * 1.3^q, q -> 210.0 * q)
 )
-
 const NUM_RES = length(RESOURCES)
 const Inventory = NTuple{NUM_RES,Int}
 
@@ -35,7 +34,7 @@ function buy(s::GameState, idx::Int)
 
     s.money < price && return nothing
 
-    new_inv = ntuple(i -> i == idx ? s.inventory[i] + 1 : s.inventory[i], length(s.inventory))
+    new_inv = ntuple(i -> i == idx ? s.inventory[i] + 1 : s.inventory[i], NUM_RES)
 
     return GameState(s.time, s.money - price, new_inv)
 end
@@ -67,7 +66,7 @@ function reconstruct_path(memory, final_inventory)
         isnothing(mem_entry) && break
 
         time, money, parent_inv, action = mem_entry
-        parent_inv = ntuple(i -> i == action ? parent_inv[i] - 1 : parent_inv[i], length(parent_inv))
+        parent_inv = ntuple(i -> i == action ? parent_inv[i] - 1 : parent_inv[i], NUM_RES)
 
         action == 0 && break
 
@@ -120,7 +119,7 @@ function dijkstra(goal::Float64=1e11)
         if is_better_than_memory
             memory[next_game.inventory] = (next_game.time, next_game.money, next_game.inventory, order)
             if !done && next_game.time < best_finish_time
-                for idx in 1:length(RESOURCES)
+                for idx in 1:NUM_RES
                     push!(pq, QueueNode(next_game.time, next_game, idx))
                 end
             end
