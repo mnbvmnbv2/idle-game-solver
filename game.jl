@@ -40,8 +40,6 @@ function buy(s::GameState, idx::Int)
     return GameState(s.time, s.money - price, new_inv)
 end
 
-get_stats(state::GameState) = println("Time: $(state.time) | Money: $(round(state.money, digits=2)) | Income: $(get_income(state))")
-
 # --- solver stuff ---
 
 function time_to_money(s::GameState, money::Float64)::Int
