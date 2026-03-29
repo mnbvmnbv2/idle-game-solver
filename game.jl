@@ -84,54 +84,6 @@ function reconstruct_path(memory, final_inventory)
     return reverse(log)
 end
 
-
-function bfs(goal::Float64=1e10)
-    next_game = GameState()
-    memory = Dict{Inventory,Tuple{Int64,Float64,Inventory,Int}}()
-
-    queue = Deque{Tuple{GameState,Int64}}()
-    for idx in 1:length(RESOURCES)
-        push!(queue, (next_game, idx))
-    end
-    best_finish_time = next_game.time + time_to_money(next_game, goal)
-    best_game = next_game
-
-    iter = 0
-    while !isempty(queue) && iter < 1_000_000
-        iter += 1
-        curr_game, order = popfirst!(queue)
-
-        next_game, time, done = buy_order(curr_game, order, goal)
-
-        is_worse_than_parent = time >= curr_game.time + time_to_money(curr_game, goal)
-        is_worse_than_parent && continue
-
-        best_mem_time, best_mem_money = get(memory, next_game.inventory, (typemax(Int64), 0.0))
-        is_better_than_memory = (next_game.time < best_mem_time) ||
-                                (next_game.time == best_mem_time && next_game.money > best_mem_money)
-        if is_better_than_memory
-            memory[next_game.inventory] = (next_game.time, next_game.money, next_game.inventory, order)
-            if !done && next_game.time < best_finish_time
-                for idx in 1:length(RESOURCES)
-                    push!(queue, (next_game, idx))
-                end
-            end
-        end
-
-        if time < best_finish_time
-            best_finish_time = time
-            best_game = next_game
-        end
-    end
-
-    # finish best game
-    best_game = step(best_game, time_to_money(best_game, goal))
-
-    println("\nBest history:\n", join(reconstruct_path(memory, best_game.inventory), "\n"))
-
-    println("Final Wealth: $(best_game.money) in $(best_finish_time)")
-end
-
 struct QueueNode
     priority::Int
     game::GameState
