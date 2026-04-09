@@ -77,6 +77,15 @@ function reconstruct_path(memory, final_inventory)
     return reverse(log)
 end
 
+function is_better_than_memory(memory, next_game)
+    mem_entry = get(memory, next_game.inventory, (typemax(Int64), -1.0, (0, 0), 0))
+    best_mem_time = mem_entry[1]
+    best_mem_money = mem_entry[2]
+    is_better_than_memory = (next_game.time < best_mem_time) ||
+                            (next_game.time == best_mem_time && next_game.money > best_mem_money)
+    return is_better_than_memory
+end
+
 struct QueueNode
     priority::Int
     game::GameState
@@ -111,12 +120,7 @@ function dijkstra(goal::Float64=1e11)
         is_worse_than_parent = finish_time >= curr_game.time + time_to_money(curr_game, goal)
         is_worse_than_parent && continue
 
-        mem_entry = get(memory, next_game.inventory, (typemax(Int64), -1.0, (0, 0), 0))
-        best_mem_time = mem_entry[1]
-        best_mem_money = mem_entry[2]
-        is_better_than_memory = (next_game.time < best_mem_time) ||
-                                (next_game.time == best_mem_time && next_game.money > best_mem_money)
-        if is_better_than_memory
+        if is_better_than_memory(memory, next_game)
             memory[next_game.inventory] = (next_game.time, next_game.money, next_game.inventory, order)
             if !done && next_game.time < best_finish_time
                 for idx in 1:NUM_RES
