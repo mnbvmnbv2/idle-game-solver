@@ -86,6 +86,13 @@ function is_better_than_memory(memory, next_game)
     return is_better_than_memory
 end
 
+function is_worse_than_best(game::GameState, best_game::GameState)
+    more_time = game.time > best_game.time
+    less_money = game.money < best_game.money
+    less_of_everything = all((i, j) -> i >= j, zip(game.inventory, best_game.inventory))
+    return more_time && less_money && less_of_everything
+end
+
 struct QueueNode
     priority::Int
     game::GameState
@@ -119,6 +126,8 @@ function dijkstra(goal::Float64=1e11)
 
         is_worse_than_parent = finish_time >= curr_game.time + time_to_money(curr_game, goal)
         is_worse_than_parent && continue
+
+        is_worse_than_best(next_game, best_game) && continue
 
         if is_better_than_memory(memory, next_game)
             memory[next_game.inventory] = (next_game.time, next_game.money, next_game.inventory, order)
