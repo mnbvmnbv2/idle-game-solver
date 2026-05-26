@@ -1,275 +1,146 @@
-use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
-use std::iter::zip;
-use std::time::Instant;
+use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, HashMap},
+    time::Instant,
+};
 
-struct Resource {
-    name: &'static str,
-    cost_fn: fn(i32) -> f64,  // Function: f(x) -> cost of the next unit
-    yield_fn: fn(i32) -> f64, // Function: g(x) -> total production per second
-}
-
+#[rustfmt::skip]
+struct Resource { name: &'static str, cost_fn: fn(i32) -> f64, yield_fn: fn(i32) -> f64 }
 const NUM_RES: usize = 3;
-const RESOURCES: [Resource; 3] = [
-    Resource {
-        name: "Clicker",
-        cost_fn: |q| 10.0 * 1.1_f64.powi(q),
-        yield_fn: |q| 2.0 * (q as f64),
-    },
-    Resource {
-        name: "Factory",
-        cost_fn: |q| 100.0 * 1.2_f64.powi(q),
-        yield_fn: |q| {
-            if q >= 5 {
-                30.0 * (q as f64)
-            } else {
-                10.0 * (q as f64)
-            }
-        },
-    },
-    Resource {
-        name: "Depot",
-        cost_fn: |q| 1000.0 * 1.3_f64.powi(q),
-        yield_fn: |q| 210.0 * (q as f64),
-    },
-];
 
-type Inventory = [i32; NUM_RES];
+#[rustfmt::skip]
+const RESOURCES: [Resource; 3] = [
+    Resource { name: "Clicker", cost_fn: |q| 10. * 1.1_f64.powi(q), yield_fn: |q| 2. * q as f64 },
+    Resource { name: "Factory", cost_fn: |q| 100. * 1.2_f64.powi(q), yield_fn: |q| if q >= 5 { 30. * q as f64 } else { 10. * q as f64 } },
+    Resource { name: "Depot", cost_fn: |q| 1000. * 1.3_f64.powi(q), yield_fn: |q| 210. * q as f64 },
+];
 
 #[derive(Clone, Copy, Debug)]
 struct GameState {
     time: i64,
     money: f64,
-    inventory: Inventory,
+    inventory: [i32; NUM_RES],
 }
-
 impl GameState {
-    fn new() -> GameState {
-        let mut gs = GameState {
-            time: 0,
-            money: 0.0,
-            inventory: [0; NUM_RES],
-        };
-        gs.inventory[0] = 1;
-        gs
+    fn new() -> Self {
+        Self { time: 0, money: 0., inventory: [1, 0, 0] }
     }
 }
 
-// --- transitions and helpers ---
+#[rustfmt::skip]
+fn get_inc(s: &GameState) -> f64 { s.inventory.iter().enumerate().map(|(i, &q)| (RESOURCES[i].yield_fn)(q)).sum() }
+#[rustfmt::skip]
+fn get_cost(i: usize, s: &GameState) -> f64 { (RESOURCES[i].cost_fn)(s.inventory[i]) }
+#[rustfmt::skip]
+fn step(s: GameState, t: i64) -> GameState { GameState { time: s.time + t, money: s.money + get_inc(&s) * t as f64, ..s } }
 
-fn get_income(state: &GameState) -> f64 {
-    let mut income = 0.;
-    for (r, q) in zip(&RESOURCES, state.inventory) {
-        income += (r.yield_fn)(q)
-    }
-    income
-}
-fn get_cost(idx: usize, s: &GameState) -> f64 {
-    (RESOURCES[idx].cost_fn)(s.inventory[idx])
-}
-fn step(s: GameState, ticks: i64) -> GameState {
-    GameState {
-        time: s.time + ticks,
-        money: s.money + (get_income(&s) * ticks as f64),
-        inventory: s.inventory,
-    }
+fn buy(mut s: GameState, i: usize) -> Option<GameState> {
+    let p = get_cost(i, &s);
+    (s.money + 1e-9 >= p).then(|| {
+        s.money -= p;
+        s.inventory[i] += 1;
+        s
+    })
 }
 
-fn buy(state: &GameState, idx: usize) -> Option<GameState> {
-    let price = get_cost(idx, state);
-
-    if state.money + 1e-9 < price {
-        return None;
-    }
-    let mut new_state = *state;
-
-    new_state.money -= price;
-    new_state.inventory[idx] += 1;
-
-    Some(new_state)
-}
-
-// --- solver stuff ---
-
-fn time_to_money(s: &GameState, money: f64) -> i64 {
-    let income = get_income(&s);
-    if income <= 0.0 {
-        return i64::MAX;
-    }
-
-    ((money - s.money).max(0.0) / income).ceil() as i64
-}
-
-struct BuyOrder {
-    game: GameState,
-    time: i64,
-    done: bool,
-}
-
-fn buy_order(s: GameState, order: usize, goal: f64) -> BuyOrder {
-    let time_to_goal = time_to_money(&s, goal);
-    let time_to_resource = time_to_money(&s, get_cost(order, &s));
-    if time_to_goal <= time_to_resource {
-        return BuyOrder {
-            game: s,
-            time: s.time + time_to_goal,
-            done: true,
-        };
-    }
-
-    let s = buy(&step(s, time_to_resource), order).unwrap();
-    BuyOrder {
-        game: s,
-        time: s.time + time_to_money(&s, goal),
-        done: false,
+fn time_to_money(s: &GameState, goal: f64) -> i64 {
+    let inc = get_inc(s);
+    if inc <= 0. {
+        i64::MAX
+    } else {
+        ((goal - s.money).max(0.) / inc).ceil() as i64
     }
 }
 
-// main
+fn buy_order(s: GameState, order: usize, goal: f64) -> (GameState, i64, bool) {
+    let (tg, tr) = (time_to_money(&s, goal), time_to_money(&s, get_cost(order, &s)));
+    if tg <= tr {
+        return (s, s.time + tg, true);
+    }
+    let s = buy(step(s, tr), order).unwrap();
+    (s, s.time + time_to_money(&s, goal), false)
+}
 
 fn reconstruct_path(
-    memory: &HashMap<Inventory, MemEntry>,
-    final_inventory: Inventory,
+    mem: &HashMap<[i32; NUM_RES], (i64, f64, usize)>,
+    mut inv: [i32; NUM_RES],
 ) -> Vec<String> {
     let mut log = Vec::new();
-    let mut curr_inv = final_inventory;
-
-    while let Some(&(time, _money, action)) = memory.get(&curr_inv) {
-        if action == usize::MAX {
+    while let Some(&(t, _, a)) = mem.get(&inv) {
+        if a == usize::MAX {
             break;
         }
-
-        log.push(format!(
-            "Reached {:?} by buying {} at time {}",
-            curr_inv, RESOURCES[action].name, time
-        ));
-
-        curr_inv[action] -= 1;
+        log.push(format!("Reached {:?} by buying {} at time {}", inv, RESOURCES[a].name, t));
+        inv[a] -= 1;
     }
-
     log.reverse();
     log
 }
 
-struct QueueNode {
-    priority: i64,
-    game: GameState,
-    order: usize,
-}
-
-impl PartialEq for QueueNode {
-    fn eq(&self, other: &Self) -> bool {
-        self.priority == other.priority
+// Minimal wrapper to force BinaryHeap to be a min-heap by priority/time only.
+struct Node(i64, GameState, usize);
+impl PartialEq for Node {
+    fn eq(&self, o: &Self) -> bool {
+        self.0 == o.0
     }
 }
-impl Eq for QueueNode {}
-
-impl Ord for QueueNode {
-    fn cmp(&self, other: &Self) -> Ordering {
-        other.priority.cmp(&self.priority)
+impl Eq for Node {}
+impl Ord for Node {
+    fn cmp(&self, o: &Self) -> Ordering {
+        o.0.cmp(&self.0)
     }
 }
-impl PartialOrd for QueueNode {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+impl PartialOrd for Node {
+    fn partial_cmp(&self, o: &Self) -> Option<Ordering> {
+        Some(self.cmp(o))
     }
 }
-
-type MemEntry = (i64, f64, usize);
 
 fn dijkstra(goal: f64) {
-    let start_game = GameState::new();
+    let (mut mem, s0) = (HashMap::new(), GameState::new());
+    mem.insert(s0.inventory, (s0.time, s0.money, usize::MAX));
 
-    let mut memory: HashMap<Inventory, MemEntry> = HashMap::new();
-    memory.insert(
-        start_game.inventory,
-        (start_game.time, start_game.money, usize::MAX),
-    );
-
-    let mut best_finish_time = start_game.time + time_to_money(&start_game, goal);
-    let mut best_game = start_game;
-
-    let mut pq: BinaryHeap<QueueNode> = BinaryHeap::new();
-
-    for idx in 0..NUM_RES {
-        pq.push(QueueNode {
-            priority: start_game.time,
-            game: start_game,
-            order: idx,
-        });
-    }
-
+    let (mut best_t, mut best_g) = (s0.time + time_to_money(&s0, goal), s0);
+    let mut pq: BinaryHeap<_> = (0..NUM_RES).map(|i| Node(s0.time, s0, i)).collect();
     let mut iter = 0;
 
-    while let Some(node) = pq.pop() {
-        if iter >= 10_000_000 {
-            break;
-        }
+    while let Some(Node(pri, cg, order)) = pq.pop() {
         iter += 1;
-
-        if node.priority >= best_finish_time {
+        if iter >= 10_000_000 || pri >= best_t {
+            if iter >= 10_000_000 {
+                break;
+            }
             continue;
         }
 
-        let curr_game = node.game;
-        let order = node.order;
-
-        let bo = buy_order(curr_game, order, goal);
-        let next_game = bo.game;
-        let finish_time = bo.time;
-        let done = bo.done;
-
-        let is_worse_than_parent = finish_time >= curr_game.time + time_to_money(&curr_game, goal);
-        if is_worse_than_parent {
+        let (ng, ft, done) = buy_order(cg, order, goal);
+        if ft >= cg.time + time_to_money(&cg, goal) {
             continue;
         }
 
-        let mut is_better_than_memory = true;
-
-        if let Some(&(best_mem_time, best_mem_money, _)) = memory.get(&next_game.inventory) {
-            is_better_than_memory = (next_game.time < best_mem_time)
-                || (next_game.time == best_mem_time && next_game.money > best_mem_money);
-        }
-
-        if is_better_than_memory {
-            memory.insert(
-                next_game.inventory,
-                (next_game.time, next_game.money, order),
-            );
-
-            if !done && next_game.time < best_finish_time {
-                for idx in 0..NUM_RES {
-                    pq.push(QueueNode {
-                        priority: next_game.time,
-                        game: next_game,
-                        order: idx,
-                    });
-                }
+        if mem
+            .get(&ng.inventory)
+            .map_or(true, |&(mt, mm, _)| ng.time < mt || (ng.time == mt && ng.money > mm))
+        {
+            mem.insert(ng.inventory, (ng.time, ng.money, order));
+            if !done && ng.time < best_t {
+                pq.extend((0..NUM_RES).map(|i| Node(ng.time, ng, i)));
             }
         }
-
-        if finish_time < best_finish_time {
-            best_finish_time = finish_time;
-            best_game = next_game;
-            println!("Iter: {}: New Best Time Found: {}", iter, best_finish_time);
+        if ft < best_t {
+            best_t = ft;
+            best_g = ng;
+            println!("Iter: {iter}: New Best Time Found: {best_t}");
         }
     }
 
-    best_game = step(best_game, time_to_money(&best_game, goal));
-
-    let path = reconstruct_path(&memory, best_game.inventory);
-    println!("\nBest history:\n{}", path.join("\n"));
-
-    println!(
-        "Final Wealth: {:.2} in {}",
-        best_game.money, best_finish_time
-    );
-    println!("Did {} iterations", iter);
+    best_g = step(best_g, time_to_money(&best_g, goal));
+    println!("\nBest history:\n{}", reconstruct_path(&mem, best_g.inventory).join("\n"));
+    println!("Final Wealth: {:.2} in {}\nDid {} iterations", best_g.money, best_t, iter);
 }
 
 fn main() {
     let start = Instant::now();
-    dijkstra(1e11_f64);
-    let duration = start.elapsed();
-    println!("Time elapsed: {:?}", duration);
+    dijkstra(1e11);
+    println!("Time elapsed: {:?}", start.elapsed());
 }
