@@ -96,7 +96,15 @@ impl PartialOrd for Node {
     }
 }
 
-fn dijkstra(goal: f64) {
+#[derive(Debug)]
+struct SolveResult {
+    _best_time: i64,
+    _final_money: f64,
+    _iterations: usize,
+    _final_inventory: [i32; NUM_RES],
+}
+
+fn dijkstra(goal: f64, verbose: bool) -> SolveResult {
     let (mut mem, s0) = (HashMap::new(), GameState::new());
     mem.insert(s0.inventory, (s0.time, s0.money, usize::MAX));
 
@@ -130,17 +138,29 @@ fn dijkstra(goal: f64) {
         if ft < best_t {
             best_t = ft;
             best_g = ng;
-            println!("Iter: {iter}: New Best Time Found: {best_t}");
+            if verbose {
+                println!("Iter: {iter}: New Best Time Found: {best_t}");
+            }
         }
     }
 
     best_g = step(best_g, time_to_money(&best_g, goal));
-    println!("\nBest history:\n{}", reconstruct_path(&mem, best_g.inventory).join("\n"));
-    println!("Final Wealth: {:.2} in {}\nDid {} iterations", best_g.money, best_t, iter);
+
+    if verbose {
+        reconstruct_path(&mem, best_g.inventory);
+    }
+
+    SolveResult {
+        _best_time: best_t,
+        _final_money: best_g.money,
+        _iterations: iter,
+        _final_inventory: best_g.inventory,
+    }
 }
 
 fn main() {
     let start = Instant::now();
-    dijkstra(1e11);
+    let result = dijkstra(1e12, false);
     println!("Time elapsed: {:?}", start.elapsed());
+    println!("{result:?}");
 }
