@@ -15,6 +15,42 @@ const RESOURCES: [Resource; 3] = [
     Resource { name: "Depot", cost_fn: |q| 1000. * 1.3_f64.powi(q), yield_fn: |q| 210. * q as f64 },
 ];
 
+#[inline(always)]
+fn name(i: usize) -> String {
+    match i {
+        0 => "Clicker".to_string(),
+        1 => "Factory".to_string(),
+        2 => "Depot".to_string(),
+        _ => unreachable!(),
+    }
+}
+
+#[inline(always)]
+fn cost(i: usize, q: i32) -> f64 {
+    match i {
+        0 => 10.0 * 1.1_f64.powi(q),
+        1 => 100.0 * 1.2_f64.powi(q),
+        2 => 1000.0 * 1.3_f64.powi(q),
+        _ => unreachable!(),
+    }
+}
+
+#[inline(always)]
+fn yield_of(i: usize, q: i32) -> f64 {
+    match i {
+        0 => 2.0 * q as f64,
+        1 => {
+            if q >= 5 {
+                30.0 * q as f64
+            } else {
+                10.0 * q as f64
+            }
+        }
+        2 => 210.0 * q as f64,
+        _ => unreachable!(),
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct GameState {
     time: i64,
@@ -28,9 +64,9 @@ impl GameState {
 }
 
 #[rustfmt::skip]
-fn get_inc(s: &GameState) -> f64 { s.inventory.iter().enumerate().map(|(i, &q)| (RESOURCES[i].yield_fn)(q)).sum() }
+fn get_inc(s: &GameState) -> f64 { s.inventory.iter().enumerate().map(|(i, &q)| yield_of(i,q)).sum() }
 #[rustfmt::skip]
-fn get_cost(i: usize, s: &GameState) -> f64 { (RESOURCES[i].cost_fn)(s.inventory[i]) }
+fn get_cost(i: usize, s: &GameState) -> f64 { cost(i, s.inventory[i]) }
 #[rustfmt::skip]
 fn step(s: GameState, t: i64) -> GameState { GameState { time: s.time + t, money: s.money + get_inc(&s) * t as f64, ..s } }
 
@@ -70,7 +106,7 @@ fn reconstruct_path(
         if a == usize::MAX {
             break;
         }
-        log.push(format!("Reached {:?} by buying {} at time {}", inv, RESOURCES[a].name, t));
+        log.push(format!("Reached {:?} by buying {} at time {}", inv, name(a), t));
         inv[a] -= 1;
     }
     log.reverse();
