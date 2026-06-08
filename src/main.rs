@@ -1,8 +1,5 @@
-use std::{
-    cmp::Ordering,
-    collections::{BinaryHeap, HashMap},
-    time::Instant,
-};
+use rustc_hash::FxHashMap as HashMap;
+use std::{cmp::Ordering, collections::BinaryHeap, time::Instant};
 
 #[rustfmt::skip]
 struct Resource { name: &'static str, cost_fn: fn(i32) -> f64, yield_fn: fn(i32) -> f64 }
@@ -106,7 +103,8 @@ struct SolveResult {
 }
 
 fn dijkstra(goal: f64, verbose: bool) -> SolveResult {
-    let (mut mem, s0) = (HashMap::new(), GameState::new());
+    let mut mem = HashMap::with_capacity_and_hasher(100_000, Default::default());
+    let s0 = GameState::new();
     mem.insert(s0.inventory, (s0.time, s0.money, usize::MAX));
 
     let (mut best_t, mut best_g) = (s0.time + time_to_money(&s0, goal), s0);
