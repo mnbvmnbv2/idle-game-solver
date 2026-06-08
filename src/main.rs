@@ -96,10 +96,10 @@ impl PartialOrd for Node {
 
 #[derive(Debug)]
 struct SolveResult {
-    _best_time: i64,
-    _final_money: f64,
-    _iterations: usize,
-    _final_inventory: [i32; NUM_RES],
+    best_time: i64,
+    final_money: f64,
+    iterations: usize,
+    final_inventory: [i32; NUM_RES],
 }
 
 fn dijkstra(goal: f64, verbose: bool) -> SolveResult {
@@ -152,10 +152,10 @@ fn dijkstra(goal: f64, verbose: bool) -> SolveResult {
     }
 
     SolveResult {
-        _best_time: best_t,
-        _final_money: best_g.money,
-        _iterations: iter,
-        _final_inventory: best_g.inventory,
+        best_time: best_t,
+        final_money: best_g.money,
+        iterations: iter,
+        final_inventory: best_g.inventory,
     }
 }
 
