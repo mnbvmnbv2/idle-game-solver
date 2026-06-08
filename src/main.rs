@@ -36,7 +36,7 @@ fn step(s: GameState, t: i64) -> GameState { GameState { time: s.time + t, money
 
 fn buy(mut s: GameState, i: usize) -> Option<GameState> {
     let p = get_cost(i, &s);
-    (s.money + 1e-9 >= p).then(|| {
+    (s.money >= p).then(|| {
         s.money -= p;
         s.inventory[i] += 1;
         s
