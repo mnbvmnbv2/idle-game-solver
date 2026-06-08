@@ -7,6 +7,7 @@ use std::{
 #[rustfmt::skip]
 struct Resource { name: &'static str, cost_fn: fn(i32) -> f64, yield_fn: fn(i32) -> f64 }
 const NUM_RES: usize = 3;
+const MAX_NODES: usize = 10_000_000;
 
 #[rustfmt::skip]
 const RESOURCES: [Resource; 3] = [
@@ -114,8 +115,8 @@ fn dijkstra(goal: f64, verbose: bool) -> SolveResult {
 
     while let Some(Node(pri, cg, order)) = pq.pop() {
         iter += 1;
-        if iter >= 10_000_000 || pri >= best_t {
-            if iter >= 10_000_000 {
+        if iter >= MAX_NODES || pri >= best_t {
+            if iter >= MAX_NODES {
                 break;
             }
             continue;
