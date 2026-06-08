@@ -148,7 +148,9 @@ fn dijkstra(goal: f64, verbose: bool) -> SolveResult {
     best_g = step(best_g, time_to_money(&best_g, goal));
 
     if verbose {
-        reconstruct_path(&mem, best_g.inventory);
+        for line in reconstruct_path(&mem, best_g.inventory) {
+            println!("{line}");
+        }
     }
 
     SolveResult {
