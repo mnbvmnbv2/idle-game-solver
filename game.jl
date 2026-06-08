@@ -7,6 +7,9 @@ struct Resource{F<:Function,G<:Function}
     yield_fn::G  # Function: g(x) -> total production per second
 end
 
+const GOAL = 1e11
+const MAX_ITER = 10_000_000
+
 const RESOURCES = (
     Resource("Clicker", q -> 10 * 1.1^q, q -> 2.0 * q),
     Resource("Factory", q -> 100 * 1.2^q, q -> q >= 5 ? (30.0 * q) : (10.0 * q)),
@@ -100,7 +103,7 @@ struct QueueNode
 end
 Base.isless(a::QueueNode, b::QueueNode) = a.priority < b.priority
 
-function dijkstra(goal::Float64=1e11)
+function dijkstra(goal::Float64)
     start_game = GameState()
 
     memory = Dict{Inventory,Tuple{Int64,Float64,Inventory,Int}}()
@@ -115,7 +118,7 @@ function dijkstra(goal::Float64=1e11)
     end
 
     iter = 0
-    while !isempty(pq) && iter < 1_000_000
+    while !isempty(pq) && iter < MAX_ITER
         iter += 1
         node = pop!(pq)
         node.priority >= best_finish_time && continue
@@ -155,4 +158,4 @@ function dijkstra(goal::Float64=1e11)
     println("Did $iter iterations")
 end
 
-@time dijkstra()
+@time dijkstra(GOAL)
