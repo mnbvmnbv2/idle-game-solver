@@ -28,16 +28,16 @@ impl GameState {
 #[rustfmt::skip]
 fn get_inc(s: &GameState) -> f64 { s.inventory.iter().enumerate().map(|(i, &q)| (RESOURCES[i].yield_fn)(q)).sum() }
 #[rustfmt::skip]
-fn get_cost(i: usize, s: &GameState) -> f64 { (RESOURCES[i].cost_fn)(s.inventory[i]) }
+fn get_cost(idx: usize, s: &GameState) -> f64 { (RESOURCES[idx].cost_fn)(s.inventory[idx]) }
 #[rustfmt::skip]
 fn step(s: GameState, t: i64) -> GameState { GameState { time: s.time + t, money: s.money + get_inc(&s) * t as f64, ..s } }
 
-fn buy(mut s: GameState, i: usize) -> Option<GameState> {
-    let p = get_cost(i, &s);
-    (s.money >= p).then(|| {
-        s.money -= p;
-        s.inventory[i] += 1;
-        s
+fn buy(mut state: GameState, idx: usize) -> Option<GameState> {
+    let price = get_cost(idx, &state);
+    (state.money >= price).then(|| {
+        state.money -= price;
+        state.inventory[idx] += 1;
+        state
     })
 }
 
@@ -51,11 +51,12 @@ fn time_to_money(s: &GameState, goal: f64) -> i64 {
 }
 
 fn buy_order(s: GameState, order: usize, goal: f64) -> (GameState, i64, bool) {
-    let (tg, tr) = (time_to_money(&s, goal), time_to_money(&s, get_cost(order, &s)));
-    if tg <= tr {
-        return (s, s.time + tg, true);
+    let (time_to_goal, time_to_resource) =
+        (time_to_money(&s, goal), time_to_money(&s, get_cost(order, &s)));
+    if time_to_goal <= time_to_resource {
+        return (s, s.time + time_to_goal, true);
     }
-    let s = buy(step(s, tr), order).unwrap();
+    let s = buy(step(s, time_to_resource), order).unwrap();
     (s, s.time + time_to_money(&s, goal), false)
 }
 
