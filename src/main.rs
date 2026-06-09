@@ -76,7 +76,7 @@ fn reconstruct_path(
     log
 }
 
-// Minimal wrapper to force BinaryHeap to be a min-heap by priority/time only.
+// Node implementation (time, state, decision index)
 struct Node(i64, GameState, usize);
 impl PartialEq for Node {
     fn eq(&self, o: &Self) -> bool {
@@ -103,43 +103,42 @@ struct SolveResult {
     final_inventory: [i32; NUM_RES],
 }
 
-fn dijkstra(goal: f64, verbose: bool) -> SolveResult {
+fn search(goal: f64, verbose: bool) -> SolveResult {
     let mut mem = HashMap::with_capacity_and_hasher(100_000, Default::default());
     let s0 = GameState::new();
     mem.insert(s0.inventory, (s0.time, s0.money, usize::MAX));
 
-    let (mut best_t, mut best_g) = (s0.time + time_to_money(&s0, goal), s0);
-    let mut pq: BinaryHeap<_> = (0..NUM_RES).map(|i| Node(s0.time, s0, i)).collect();
+    let (mut best_time, mut best_g) = (s0.time + time_to_money(&s0, goal), s0);
+    let mut pri_q: BinaryHeap<_> = (0..NUM_RES).map(|i| Node(s0.time, s0, i)).collect();
     let mut iter = 0;
 
-    while let Some(Node(pri, cg, order)) = pq.pop() {
+    while let Some(Node(time, current_state, order)) = pri_q.pop() {
         iter += 1;
-        if iter >= MAX_NODES || pri >= best_t {
+        if iter >= MAX_NODES || time >= best_time {
             if iter >= MAX_NODES {
                 break;
             }
             continue;
         }
 
-        let (ng, ft, done) = buy_order(cg, order, goal);
-        if ft >= cg.time + time_to_money(&cg, goal) {
+        let (next_state, ft, done) = buy_order(current_state, order, goal);
+        if ft >= current_state.time + time_to_money(&current_state, goal) {
             continue;
         }
 
-        if mem
-            .get(&ng.inventory)
-            .map_or(true, |&(mt, mm, _)| ng.time < mt || (ng.time == mt && ng.money > mm))
-        {
-            mem.insert(ng.inventory, (ng.time, ng.money, order));
-            if !done && ng.time < best_t {
-                pq.extend((0..NUM_RES).map(|i| Node(ng.time, ng, i)));
+        if mem.get(&next_state.inventory).map_or(true, |&(mt, mm, _)| {
+            next_state.time < mt || (next_state.time == mt && next_state.money > mm)
+        }) {
+            mem.insert(next_state.inventory, (next_state.time, next_state.money, order));
+            if !done && next_state.time < best_time {
+                pri_q.extend((0..NUM_RES).map(|i| Node(next_state.time, next_state, i)));
             }
         }
-        if ft < best_t {
-            best_t = ft;
-            best_g = ng;
+        if ft < best_time {
+            best_time = ft;
+            best_g = next_state;
             if verbose {
-                println!("Iter: {iter}: New Best Time Found: {best_t}");
+                println!("Iter: {iter}: New Best Time Found: {best_time}");
             }
         }
     }
@@ -153,7 +152,7 @@ fn dijkstra(goal: f64, verbose: bool) -> SolveResult {
     }
 
     SolveResult {
-        best_time: best_t,
+        best_time,
         final_money: best_g.money,
         iterations: iter,
         final_inventory: best_g.inventory,
@@ -162,7 +161,7 @@ fn dijkstra(goal: f64, verbose: bool) -> SolveResult {
 
 fn main() {
     let start = Instant::now();
-    let result = dijkstra(1e12, false);
+    let result = search(1e12, false);
     println!("Time elapsed: {:?}", start.elapsed());
     println!("{result:?}");
 }
