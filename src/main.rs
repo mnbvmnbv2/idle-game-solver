@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap as HashMap;
 use std::ops::Bound::{Excluded, Unbounded};
 use std::{
     cmp::Ordering,
@@ -6,10 +5,13 @@ use std::{
     time::Instant,
 };
 
-#[rustfmt::skip]
-struct Resource { name: &'static str, cost_fn: fn(i32) -> f64, yield_fn: fn(i32) -> f64 }
+const GOAL: f64 = 1e12;
 const NUM_RES: usize = 3;
 const MAX_NODES: usize = 10_000_000;
+const VERBOSE: bool = true;
+
+#[rustfmt::skip]
+struct Resource { name: &'static str, cost_fn: fn(i32) -> f64, yield_fn: fn(i32) -> f64 }
 
 #[rustfmt::skip]
 const RESOURCES: [Resource; 3] = [
@@ -70,17 +72,21 @@ fn buy_order(s: GameState, order: usize, goal: f64) -> (GameState, i64, bool) {
     (s, s.time + time_to_money(&s, goal), false)
 }
 
-fn reconstruct_path(
-    mem: &HashMap<[i32; NUM_RES], (i64, f64, usize)>,
-    mut inv: [i32; NUM_RES],
-) -> Vec<String> {
+fn reconstruct_path(mem: &BTreeMap<i64, TraceEntry>, mut time: i64) -> Vec<String> {
     let mut log = Vec::new();
-    while let Some(&(t, _, a)) = mem.get(&inv) {
-        if a == usize::MAX {
+    while let Some(entry) = mem.get(&time) {
+        println!("{:?}", entry);
+        let Some(parent_time) = entry.parent_time else {
             break;
-        }
-        log.push(format!("Reached {:?} by buying {} at time {}", inv, RESOURCES[a].name, t));
-        inv[a] -= 1;
+        };
+        let Some(bought) = entry.bought else {
+            break;
+        };
+        log.push(format!(
+            "Reached {:?} by buying {} at time {}",
+            entry.state.inventory, RESOURCES[bought].name, entry.state.time
+        ));
+        time = parent_time;
     }
     log.reverse();
     log
@@ -105,6 +111,13 @@ impl PartialOrd for Node {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct TraceEntry {
+    state: GameState,
+    parent_time: Option<i64>,
+    bought: Option<usize>,
+}
+
 #[derive(Debug)]
 struct SolveResult {
     best_time: i64,
@@ -114,17 +127,15 @@ struct SolveResult {
 }
 
 fn search(goal: f64, verbose: bool) -> SolveResult {
-    // let mut mem = HashMap::with_capacity_and_hasher(100_000, Default::default());
-    let mut mem = BTreeMap::new();
+    let mut mem: BTreeMap<i64, TraceEntry> = BTreeMap::new();
     let s0 = GameState::new();
-    // mem.insert(s0.inventory, (s0.time, s0.money, usize::MAX));
-    mem.insert(s0.time, (s0, usize::MAX));
+    mem.insert(s0.time, TraceEntry { state: s0, parent_time: None, bought: None });
 
     let (mut best_time, mut best_game) = (s0.time + time_to_money(&s0, goal), s0);
     let mut pri_q: BinaryHeap<_> = (0..NUM_RES).map(|i| Node(s0.time, s0, i)).collect();
     let mut iter = 0;
 
-    while let Some(Node(time, current_state, order)) = pri_q.pop() {
+    while let Some(Node(_, current_state, order)) = pri_q.pop() {
         iter += 1;
         if iter >= MAX_NODES {
             break;
@@ -144,24 +155,32 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
         }
 
         let key = next_state.time;
-        if let Some((mem_state, mem_order)) = mem.get(&key) {
+        if let Some(entry) = mem.get(&key) {
+            let mem_state = entry.state;
             if mem_state.income > next_state.income
                 || (mem_state.income == next_state.income && mem_state.money > next_state.money)
             {
                 continue;
             }
         }
-        if let Some((idx, (mem_state, order))) = mem.range((Unbounded, Excluded(&key))).next_back()
-        {
+        if let Some((_, entry)) = mem.range((Unbounded, Excluded(&key))).next_back() {
+            let mem_state = entry.state;
             if mem_state.income > next_state.income
                 || (mem_state.income == next_state.income && mem_state.money > next_state.money)
             {
                 continue;
             }
         }
-        mem.insert(key, (next_state, order));
+        mem.insert(
+            key,
+            TraceEntry {
+                state: next_state,
+                parent_time: Some(current_state.time),
+                bought: Some(order),
+            },
+        );
 
-        // add 3 next decisions
+        // add next decisions
         if !done {
             pri_q.extend((0..NUM_RES).map(|i| Node(next_state.time, next_state, i)));
         }
@@ -175,12 +194,12 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
         }
     }
 
-    best_game = step(best_game, time_to_money(&best_game, goal));
     if verbose {
-        // for line in reconstruct_path(&mem, best_game.inventory) {
-        //     println!("{line}");
-        // }
+        for line in reconstruct_path(&mem, best_game.time) {
+            println!("{line}");
+        }
     }
+    best_game = step(best_game, time_to_money(&best_game, goal));
     SolveResult {
         best_time,
         final_money: best_game.money,
@@ -191,7 +210,7 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
 
 fn main() {
     let start = Instant::now();
-    let result = search(1e12, false);
+    let result = search(GOAL, VERBOSE);
     println!("Time elapsed: {:?}", start.elapsed());
     println!("{result:?}");
 }
