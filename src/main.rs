@@ -11,7 +11,7 @@ use std::{
 const GOAL: f64 = 1e12;
 const NUM_RES: usize = 3;
 const MAX_NODES: usize = 10_000_000;
-const VERBOSE: bool = false;
+const VERBOSE: bool = true;
 const EPS: f64 = 1e-9;
 
 #[rustfmt::skip]
@@ -24,37 +24,24 @@ const RESOURCES: [Resource; NUM_RES] = [
     Resource { name: "Depot", cost_fn: |q| 1000. * 1.3_f64.powi(q), yield_fn: |q| 210. * q as f64 },
 ];
 type Inv = [i32; NUM_RES];
-type StateKey = (i64, Inv);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct GameState {
+    id: usize,
+    parent_id: usize,
+    last_buy: usize,
     time: i64,
     money: f64,
     inventory: Inv,
     income: f64,
 }
-impl GameState {
-    fn new() -> Self {
-        let inventory = [1, 0, 0];
-        Self { time: 0, money: 0., inventory, income: inc(&inventory) }
-    }
-}
 
 #[rustfmt::skip]
-fn inc(inv: &Inv) -> f64 { inv.iter().enumerate().map(|(i, &q)| (RESOURCES[i].yield_fn)(q)).sum() }
+fn inc(inv: &Inv) -> f64 { inv.iter().enumerate().map(|(i, &q)| (RESOURCES[i].yield_fn)(q)).sum()}
 #[rustfmt::skip]
-fn cost(idx: usize, s: &GameState) -> f64 { (RESOURCES[idx].cost_fn)(s.inventory[idx]) }
+fn cost(idx: usize, inv: &Inv) -> f64 {(RESOURCES[idx].cost_fn)(inv[idx])}
 #[rustfmt::skip]
-fn step(s: GameState, t: i64) -> GameState { GameState { time: s.time + t, money: s.money + s.income * t as f64, ..s } }
-
-fn buy(mut state: GameState, idx: usize) -> Option<GameState> {
-    let price = cost(idx, &state);
-    (state.money + EPS >= price).then(|| {
-        state.money -= price;
-        state.inventory[idx] += 1;
-        state.income = inc(&state.inventory);
-        state
-    })
+fn step(s: &GameState, t: i64) -> GameState {GameState { time: s.time + t, money: s.money + s.income * t as f64, ..s.clone() }
 }
 
 fn time_to_money(s: &GameState, goal: f64) -> i64 {
@@ -72,36 +59,16 @@ fn time_to_money(s: &GameState, goal: f64) -> i64 {
     }
 }
 
-fn reconstruct_path(
-    mem: &BTreeMap<StateKey, (GameState, usize, StateKey)>,
-    mut key: StateKey,
-) -> Vec<String> {
-    let mut log = Vec::new();
-    while let Some(&(s, bought, parent)) = mem.get(&key) {
-        if s.time == 0 {
-            break;
-        }
-        log.push(format!(
-            "At time {}, bought {}, inventory {:?}, income {:.2}, money {:.2}",
-            s.time, RESOURCES[bought].name, s.inventory, s.income, s.money
-        ));
-        key = parent;
-    }
-    log.reverse();
-    log
+fn gain(i: usize, inv: &Inv) -> f64 {
+    (RESOURCES[i].yield_fn)(inv[i] + 1) - (RESOURCES[i].yield_fn)(inv[i])
 }
 
-fn gain(i: usize, s: &GameState) -> f64 {
-    let q = s.inventory[i];
-    (RESOURCES[i].yield_fn)(q + 1) - (RESOURCES[i].yield_fn)(q)
-}
-
-fn roi(i: usize, s: &GameState) -> i64 {
-    let c = cost(i, s);
+fn roi(i: usize, inv: &Inv) -> i64 {
+    let c = cost(i, inv);
     if c <= 0. {
         i64::MAX
     } else {
-        (gain(i, s) / c * 1e12) as i64
+        (gain(i, inv) / c * 1e12) as i64
     }
 }
 
@@ -113,35 +80,11 @@ fn dominates(a: &GameState, b: &GameState) -> bool {
     a.time <= b.time && a.money + a.income * (b.time - a.time) as f64 + EPS >= b.money
 }
 
-fn insert_front(front: &mut BTreeMap<Inv, Vec<GameState>>, s: GameState) -> bool {
-    let v = front.entry(s.inventory).or_default();
-
-    if v.iter().any(|old| dominates(old, &s)) {
-        return false;
-    }
-
-    v.retain(|old| !dominates(&s, old));
-    v.push(s);
-    true
-}
-
-fn alive(front: &BTreeMap<Inv, Vec<GameState>>, s: &GameState) -> bool {
-    front
-        .get(&s.inventory)
-        .is_some_and(|v| v.iter().any(|x| x.time == s.time && (x.money - s.money).abs() <= EPS))
-}
-
-/*
-State heap.
-
-p1 = negative finish time, so earlier projected finish pops first.
-p2 = ROI of the move that created this state, only tie-breaker.
-*/
 #[derive(Clone, Copy)]
 struct Node {
     p1: i64,
     p2: i64,
-    s: GameState,
+    id: usize,
 }
 
 impl PartialEq for Node {
@@ -152,17 +95,13 @@ impl PartialEq for Node {
 impl Eq for Node {}
 impl Ord for Node {
     fn cmp(&self, o: &Self) -> Ordering {
-        self.p1.cmp(&o.p1).then(self.p2.cmp(&o.p2)).then(o.s.time.cmp(&self.s.time))
+        self.p1.cmp(&o.p1).then(self.p2.cmp(&o.p2))
     }
 }
 impl PartialOrd for Node {
     fn partial_cmp(&self, o: &Self) -> Option<Ordering> {
         Some(self.cmp(o))
     }
-}
-
-fn push(q: &mut BinaryHeap<Node>, s: GameState, last_roi: i64, goal: f64) {
-    q.push(Node { p1: -finish_time(&s, goal), p2: last_roi, s });
 }
 
 #[derive(Debug)]
@@ -174,71 +113,102 @@ struct SolveResult {
 }
 
 fn search(goal: f64, verbose: bool) -> SolveResult {
-    let mut mem: BTreeMap<StateKey, (GameState, usize, StateKey)> = BTreeMap::new();
-    let s0 = GameState::new();
-    mem.insert((0, s0.inventory), (s0, usize::MAX, (0, s0.inventory)));
-    let mut best_state = s0;
-    let mut best_time = finish_time(&s0, goal);
+    let mut history: Vec<GameState> = Vec::new();
+    let mut front: BTreeMap<Inv, Vec<usize>> = BTreeMap::new();
     let mut pri_q = BinaryHeap::new();
-    let mut front: BTreeMap<Inv, Vec<GameState>> = BTreeMap::new();
-    insert_front(&mut front, s0);
-    push(&mut pri_q, s0, 0, goal);
+
+    let s0 = GameState {
+        id: 0,
+        parent_id: 0,
+        last_buy: usize::MAX,
+        time: 0,
+        money: 0.,
+        inventory: [1, 0, 0],
+        income: inc(&[1, 0, 0]),
+    };
+
+    history.push(s0.clone());
+    front.entry(s0.inventory).or_default().push(s0.id);
+    pri_q.push(Node { p1: -finish_time(&s0, goal), p2: 0, id: s0.id });
+    let mut best_state_id = 0;
+    let mut best_time = finish_time(&s0, goal);
     let mut iter = 0;
 
-    while let Some(Node { s, .. }) = pri_q.pop() {
+    while let Some(Node { id, .. }) = pri_q.pop() {
         iter += 1;
         if iter >= MAX_NODES {
             break;
         }
 
-        if s.time >= best_time || !alive(&front, &s) {
+        let s = history[id].clone();
+        if s.time >= best_time {
+            continue;
+        }
+        let still_alive = front.get(&s.inventory).is_some_and(|v| v.contains(&id));
+        if !still_alive {
             continue;
         }
 
         let wait_finish = finish_time(&s, goal);
         if wait_finish < best_time {
             best_time = wait_finish;
-            best_state = s;
-
+            best_state_id = id;
             if verbose {
                 println!("Iter {iter}: New Best Time Found: {best_time}");
             }
         }
 
         for i in 0..NUM_RES {
-            let wait = time_to_money(&s, cost(i, &s));
+            let wait = time_to_money(&s, cost(i, &s.inventory));
             if wait == i64::MAX || s.time + wait >= best_time {
                 continue;
             }
 
-            let Some(ns) = buy(step(s, wait), i) else {
-                continue;
-            };
+            let mut ns = step(&s, wait);
+            ns.money -= cost(i, &ns.inventory);
+            ns.inventory[i] += 1;
+            ns.income = inc(&ns.inventory);
+
+            ns.id = history.len();
+            ns.parent_id = s.id;
+            ns.last_buy = i;
 
             let ns_finish = finish_time(&ns, goal);
-
-            // Critical pruning, but now applied only after child construction.
-            // This keeps your old useful behavior but avoids decision-node explosion.
             if ns_finish >= wait_finish || ns_finish >= best_time {
                 continue;
             }
 
-            if !insert_front(&mut front, ns) {
+            let v = front.entry(ns.inventory).or_default();
+            if v.iter().any(|&old_id| dominates(&history[old_id], &ns)) {
                 continue;
             }
+            v.retain(|&old_id| !dominates(&ns, &history[old_id]));
+            v.push(ns.id);
 
-            mem.insert((ns.time, ns.inventory), (ns, i, (s.time, s.inventory)));
-            push(&mut pri_q, ns, roi(i, &s), goal);
+            history.push(ns.clone());
+            pri_q.push(Node { p1: -finish_time(&ns, goal), p2: roi(i, &s.inventory), id: ns.id });
         }
     }
 
     if verbose {
-        for line in reconstruct_path(&mem, (best_state.time, best_state.inventory)) {
+        let mut log = Vec::new();
+        let mut curr = best_state_id;
+        while curr != 0 {
+            let s = &history[curr];
+            log.push(format!(
+                "At time {}, bought {}, inventory {:?}, income {:.2}, money {:.2}",
+                s.time, RESOURCES[s.last_buy].name, s.inventory, s.income, s.money
+            ));
+            curr = s.parent_id;
+        }
+        log.reverse();
+        for line in log {
             println!("{line}");
         }
         println!("Then wait until time {best_time} to reach the goal.");
     }
-    let final_state = step(best_state, time_to_money(&best_state, goal));
+    let best_state = &history[best_state_id];
+    let final_state = step(best_state, time_to_money(best_state, goal));
     SolveResult {
         best_time,
         final_money: final_state.money,
