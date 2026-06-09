@@ -1,5 +1,10 @@
 use rustc_hash::FxHashMap as HashMap;
-use std::{cmp::Ordering, collections::BinaryHeap, time::Instant};
+use std::ops::Bound::{Excluded, Unbounded};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, BinaryHeap},
+    time::Instant,
+};
 
 #[rustfmt::skip]
 struct Resource { name: &'static str, cost_fn: fn(i32) -> f64, yield_fn: fn(i32) -> f64 }
@@ -109,9 +114,11 @@ struct SolveResult {
 }
 
 fn search(goal: f64, verbose: bool) -> SolveResult {
-    let mut mem = HashMap::with_capacity_and_hasher(100_000, Default::default());
+    // let mut mem = HashMap::with_capacity_and_hasher(100_000, Default::default());
+    let mut mem = BTreeMap::new();
     let s0 = GameState::new();
-    mem.insert(s0.inventory, (s0.time, s0.money, usize::MAX));
+    // mem.insert(s0.inventory, (s0.time, s0.money, usize::MAX));
+    mem.insert(s0.time, (s0, usize::MAX));
 
     let (mut best_time, mut best_game) = (s0.time + time_to_money(&s0, goal), s0);
     let mut pri_q: BinaryHeap<_> = (0..NUM_RES).map(|i| Node(s0.time, s0, i)).collect();
@@ -136,17 +143,27 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
             continue;
         }
 
-        // check memory
-        if mem.get(&next_state.inventory).map_or(true, |&(mem_time, mem_money, mem_order)| {
-            // faster, or same time but more money
-            next_state.time < mem_time
-                || (next_state.time == mem_time && next_state.money > mem_money)
-        }) {
-            mem.insert(next_state.inventory, (next_state.time, next_state.money, order));
-            // add 3 next decisions
-            if !done {
-                pri_q.extend((0..NUM_RES).map(|i| Node(next_state.time, next_state, i)));
+        let key = next_state.time;
+        if let Some((mem_state, mem_order)) = mem.get(&key) {
+            if mem_state.income > next_state.income
+                || (mem_state.income == next_state.income && mem_state.money > next_state.money)
+            {
+                continue;
             }
+        }
+        if let Some((idx, (mem_state, order))) = mem.range((Unbounded, Excluded(&key))).next_back()
+        {
+            if mem_state.income > next_state.income
+                || (mem_state.income == next_state.income && mem_state.money > next_state.money)
+            {
+                continue;
+            }
+        }
+        mem.insert(key, (next_state, order));
+
+        // add 3 next decisions
+        if !done {
+            pri_q.extend((0..NUM_RES).map(|i| Node(next_state.time, next_state, i)));
         }
         // if better we update
         if next_complete_time < best_time {
@@ -160,9 +177,9 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
 
     best_game = step(best_game, time_to_money(&best_game, goal));
     if verbose {
-        for line in reconstruct_path(&mem, best_game.inventory) {
-            println!("{line}");
-        }
+        // for line in reconstruct_path(&mem, best_game.inventory) {
+        //     println!("{line}");
+        // }
     }
     SolveResult {
         best_time,
