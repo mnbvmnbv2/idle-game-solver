@@ -1,3 +1,6 @@
+//! Solver for idle-games with assumptions:
+//! - We assume no income decreases
+//!
 use std::ops::Bound::{Excluded, Unbounded};
 use std::{
     cmp::Ordering,
@@ -40,7 +43,7 @@ fn get_inc(inv: &[i32; NUM_RES]) -> f64 { inv.iter().enumerate().map(|(i, &q)| (
 #[rustfmt::skip]
 fn get_cost(idx: usize, s: &GameState) -> f64 { (RESOURCES[idx].cost_fn)(s.inventory[idx]) }
 #[rustfmt::skip]
-fn step(s: GameState, t: i64) -> GameState { GameState { time: s.time + t, money: s.money + &s.income * t as f64, ..s } }
+fn step(s: GameState, t: i64) -> GameState { GameState { time: s.time + t, money: s.money + s.income * t as f64, ..s } }
 
 fn buy(mut state: GameState, idx: usize) -> Option<GameState> {
     let price = get_cost(idx, &state);
@@ -72,21 +75,21 @@ fn buy_order(s: GameState, order: usize, goal: f64) -> (GameState, i64, bool) {
     (s, s.time + time_to_money(&s, goal), false)
 }
 
-fn reconstruct_path(mem: &BTreeMap<i64, TraceEntry>, mut time: i64) -> Vec<String> {
+type StateKey = (i64, [i32; NUM_RES]);
+fn reconstruct_path(
+    mem: &BTreeMap<StateKey, (GameState, usize, StateKey)>,
+    mut key: StateKey,
+) -> Vec<String> {
     let mut log = Vec::new();
-    while let Some(entry) = mem.get(&time) {
-        println!("{:?}", entry);
-        let Some(parent_time) = entry.parent_time else {
+    while let Some(&(s, o, parent_key)) = mem.get(&key) {
+        if s.time == 0 {
             break;
-        };
-        let Some(bought) = entry.bought else {
-            break;
-        };
+        }
         log.push(format!(
             "Reached {:?} by buying {} at time {}",
-            entry.state.inventory, RESOURCES[bought].name, entry.state.time
+            s.inventory, RESOURCES[o].name, key.0
         ));
-        time = parent_time;
+        key = parent_key;
     }
     log.reverse();
     log
@@ -111,13 +114,6 @@ impl PartialOrd for Node {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct TraceEntry {
-    state: GameState,
-    parent_time: Option<i64>,
-    bought: Option<usize>,
-}
-
 #[derive(Debug)]
 struct SolveResult {
     best_time: i64,
@@ -127,9 +123,10 @@ struct SolveResult {
 }
 
 fn search(goal: f64, verbose: bool) -> SolveResult {
-    let mut mem: BTreeMap<i64, TraceEntry> = BTreeMap::new();
+    let mut mem: BTreeMap<StateKey, (GameState, usize, StateKey)> = BTreeMap::new();
     let s0 = GameState::new();
-    mem.insert(s0.time, TraceEntry { state: s0, parent_time: None, bought: None });
+    let k0 = (s0.time, s0.inventory);
+    mem.insert(k0, (s0, usize::MAX, k0));
 
     let (mut best_time, mut best_game) = (s0.time + time_to_money(&s0, goal), s0);
     let mut pri_q: BinaryHeap<_> = (0..NUM_RES).map(|i| Node(s0.time, s0, i)).collect();
@@ -154,31 +151,23 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
             continue;
         }
 
-        let key = next_state.time;
-        if let Some(entry) = mem.get(&key) {
-            let mem_state = entry.state;
+        let key = (next_state.time, next_state.inventory);
+        let parent_key = (current_state.time, current_state.inventory);
+        if let Some((mem_state, _, _)) = mem.get(&key) {
             if mem_state.income > next_state.income
                 || (mem_state.income == next_state.income && mem_state.money > next_state.money)
             {
                 continue;
             }
         }
-        if let Some((_, entry)) = mem.range((Unbounded, Excluded(&key))).next_back() {
-            let mem_state = entry.state;
+        if let Some((_, (mem_state, _, _))) = mem.range((Unbounded, Excluded(&key))).next_back() {
             if mem_state.income > next_state.income
                 || (mem_state.income == next_state.income && mem_state.money > next_state.money)
             {
                 continue;
             }
         }
-        mem.insert(
-            key,
-            TraceEntry {
-                state: next_state,
-                parent_time: Some(current_state.time),
-                bought: Some(order),
-            },
-        );
+        mem.insert(key, (next_state, order, parent_key));
 
         // add next decisions
         if !done {
@@ -195,7 +184,8 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
     }
 
     if verbose {
-        for line in reconstruct_path(&mem, best_game.time) {
+        let final_key = (best_game.time, best_game.inventory);
+        for line in reconstruct_path(&mem, final_key) {
             println!("{line}");
         }
     }
