@@ -11,7 +11,7 @@ use std::{
 const GOAL: f64 = 1e12;
 const NUM_RES: usize = 3;
 const MAX_NODES: usize = 10_000_000;
-const VERBOSE: bool = true;
+const VERBOSE: bool = false;
 
 #[rustfmt::skip]
 struct Resource { name: &'static str, cost_fn: fn(i32) -> f64, yield_fn: fn(i32) -> f64 }
@@ -65,7 +65,7 @@ fn time_to_money(s: &GameState, goal: f64) -> i64 {
 }
 
 /// Returns (state, time to goal, if slower than just to wait)
-fn buy_order(s: GameState, order: usize, goal: f64) -> (GameState, i64, bool) {
+fn try_buy_next(s: GameState, order: usize, goal: f64) -> (GameState, i64, bool) {
     let time_to_goal = time_to_money(&s, goal);
     let time_to_resource = time_to_money(&s, get_cost(order, &s));
     if time_to_goal <= time_to_resource {
@@ -132,16 +132,19 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
     let mut pri_q: BinaryHeap<_> = (0..NUM_RES).map(|i| Node(s0.time, s0, i)).collect();
     let mut iter = 0;
 
-    while let Some(Node(_, current_state, order)) = pri_q.pop() {
+    while let Some(node) = pri_q.pop() {
         iter += 1;
         if iter >= MAX_NODES {
             break;
         }
+        let current_state = node.1;
+        let order = node.2;
+
         // if we are already later than best time
         if current_state.time >= best_time {
             continue;
         }
-        let (next_state, next_complete_time, done) = buy_order(current_state, order, goal);
+        let (next_state, next_complete_time, done) = try_buy_next(current_state, order, goal);
         // if we end up after best time
         if next_state.time >= best_time {
             continue;
