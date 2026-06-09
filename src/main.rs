@@ -3,11 +3,7 @@
 //! - Costs depend only on current quantity
 
 use rustc_hash::FxHashMap as HashMap;
-use std::{
-    cmp::{Ordering, Reverse},
-    collections::BinaryHeap,
-    time::Instant,
-};
+use std::{cmp::Ordering, collections::BinaryHeap, time::Instant};
 
 const GOAL: f64 = 1e12;
 const NUM_RES: usize = 3;
@@ -25,7 +21,7 @@ const RESOURCES: [Resource; NUM_RES] = [
 ];
 type Inv = [i32; NUM_RES];
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug)]
 struct GameState {
     time: i64,
     money: f64,
@@ -79,18 +75,28 @@ fn reconstruct_path(mem: &HashMap<Inv, (i64, f64, usize)>, mut inv: Inv) -> Vec<
             break;
         }
         log.push(format!("At time {}, bought {}, inventory {:?}", t, RESOURCES[bought].name, inv));
-        inv[bought] -= 1; // Implicit step backward
+        inv[bought] -= 1;
     }
     log.reverse();
     log
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
-struct Node(Reverse<i64>, GameState, usize);
+#[derive(Clone)]
+struct Node(i64, GameState);
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
 impl Eq for Node {}
 impl Ord for Node {
-    fn cmp(&self, o: &Self) -> Ordering {
-        self.partial_cmp(o).unwrap()
+    fn cmp(&self, other: &Self) -> Ordering {
+        other.0.cmp(&self.0)
+    }
+}
+impl PartialOrd for Node {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -105,15 +111,17 @@ struct SolveResult {
 fn search(goal: f64, verbose: bool) -> SolveResult {
     let mut mem: HashMap<Inv, (i64, f64, usize)> =
         HashMap::with_capacity_and_hasher(100_000, Default::default());
+    let mut q = BinaryHeap::new();
 
     let s0 = GameState::new();
-    let mut q: BinaryHeap<_> = (0..NUM_RES).map(|i| Node(Reverse(0), s0, i)).collect();
     mem.insert(s0.inventory, (0, 0., usize::MAX));
+    q.push(Node(s0.time, s0));
+
     let mut best_time = finish_time(&s0, goal);
     let mut best_game = s0;
     let mut iter = 0;
 
-    while let Some(Node(Reverse(_), s, i)) = q.pop() {
+    while let Some(Node(_, s)) = q.pop() {
         iter += 1;
         if iter >= MAX_NODES {
             break;
@@ -121,28 +129,35 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
         if s.time >= best_time {
             continue;
         }
-        let Some((ns, ns_finish)) = buy_next(&s, i, goal) else {
-            continue;
-        };
-        if ns_finish >= finish_time(&s, goal) || ns.time >= best_time {
-            continue;
-        }
-
-        let is_better = mem
-            .get(&ns.inventory)
-            .map_or(true, |&(mt, mm, _)| ns.time < mt || (ns.time == mt && ns.money > mm));
-        if is_better {
-            mem.insert(ns.inventory, (ns.time, ns.money, i));
-            if ns_finish < best_time {
-                best_time = ns_finish;
-                best_game = ns;
-                if verbose {
-                    println!("Iter {iter}: New Best Time Found: {best_time}");
-                }
+        // Lazy Deletion: If a faster path reached this inventory while this node waited in the queue, drop it.
+        if let Some(&(mt, mm, _)) = mem.get(&s.inventory) {
+            if s.time > mt || (s.time == mt && s.money < mm) {
+                continue;
             }
+        }
+        // Expand all 3 branches from this state
+        for i in 0..NUM_RES {
+            let Some((ns, ns_finish)) = buy_next(&s, i, goal) else {
+                continue;
+            };
+            if ns_finish >= finish_time(&s, goal) || ns.time >= best_time {
+                continue;
+            }
+            let is_better = mem
+                .get(&ns.inventory)
+                .map_or(true, |&(mt, mm, _)| ns.time < mt || (ns.time == mt && ns.money > mm));
+            if is_better {
+                mem.insert(ns.inventory, (ns.time, ns.money, i));
+                if ns_finish < best_time {
+                    best_time = ns_finish;
+                    best_game = ns;
+                    if verbose {
+                        println!("Iter {iter}: New Best Time Found: {best_time}");
+                    }
+                }
 
-            for next_i in 0..NUM_RES {
-                q.push(Node(Reverse(ns.time), ns, next_i));
+                // Push the resolved state into the queue
+                q.push(Node(ns.time, ns));
             }
         }
     }
