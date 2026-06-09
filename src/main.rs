@@ -18,10 +18,13 @@ struct GameState {
     time: i64,
     money: f64,
     inventory: [i32; NUM_RES],
+    income: f64,
 }
 impl GameState {
     fn new() -> Self {
-        Self { time: 0, money: 0., inventory: [1, 0, 0] }
+        let inventory = [1, 0, 0];
+        let income = get_inc(&inventory);
+        Self { time: 0, money: 0., inventory, income }
     }
 }
 
@@ -30,19 +33,20 @@ fn get_inc(inv: &[i32; NUM_RES]) -> f64 { inv.iter().enumerate().map(|(i, &q)| (
 #[rustfmt::skip]
 fn get_cost(idx: usize, s: &GameState) -> f64 { (RESOURCES[idx].cost_fn)(s.inventory[idx]) }
 #[rustfmt::skip]
-fn step(s: GameState, t: i64) -> GameState { GameState { time: s.time + t, money: s.money + get_inc(&s.inventory) * t as f64, ..s } }
+fn step(s: GameState, t: i64) -> GameState { GameState { time: s.time + t, money: s.money + &s.income * t as f64, ..s } }
 
 fn buy(mut state: GameState, idx: usize) -> Option<GameState> {
     let price = get_cost(idx, &state);
     (state.money >= price).then(|| {
         state.money -= price;
         state.inventory[idx] += 1;
+        state.income = get_inc(&state.inventory);
         state
     })
 }
 
 fn time_to_money(s: &GameState, goal: f64) -> i64 {
-    let inc = get_inc(&s.inventory);
+    let inc = s.income;
     if inc <= 0. {
         i64::MAX
     } else {
