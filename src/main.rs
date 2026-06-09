@@ -132,14 +132,11 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
     let mut pri_q: BinaryHeap<_> = (0..NUM_RES).map(|i| Node(s0.time, s0, i)).collect();
     let mut iter = 0;
 
-    while let Some(node) = pri_q.pop() {
+    while let Some(Node(_, current_state, order)) = pri_q.pop() {
         iter += 1;
         if iter >= MAX_NODES {
             break;
         }
-        let current_state = node.1;
-        let order = node.2;
-
         // if we are already later than best time
         if current_state.time >= best_time {
             continue;
