@@ -123,17 +123,24 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
             continue;
         }
         let (next_state, next_complete_time, done) = buy_order(current_state, order, goal);
+        // if we end up after best time
+        if next_state.time >= best_time {
+            continue;
+        }
         // if the purchase made us worse off
         if next_complete_time >= current_state.time + time_to_money(&current_state, goal) {
             continue;
         }
 
         // check memory
-        if mem.get(&next_state.inventory).map_or(true, |&(mt, mm, _)| {
-            next_state.time < mt || (next_state.time == mt && next_state.money > mm)
+        if mem.get(&next_state.inventory).map_or(true, |&(mem_time, mem_money, mem_order)| {
+            // faster, or same time but more money
+            next_state.time < mem_time
+                || (next_state.time == mem_time && next_state.money > mem_money)
         }) {
             mem.insert(next_state.inventory, (next_state.time, next_state.money, order));
-            if !done && next_state.time < best_time {
+            // add 3 next decisions
+            if !done {
                 pri_q.extend((0..NUM_RES).map(|i| Node(next_state.time, next_state, i)));
             }
         }
