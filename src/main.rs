@@ -50,6 +50,7 @@ fn time_to_money(s: &GameState, goal: f64) -> i64 {
     }
 }
 
+/// Returns (state, time to goal, if slower than just to wait)
 fn buy_order(s: GameState, order: usize, goal: f64) -> (GameState, i64, bool) {
     let (time_to_goal, time_to_resource) =
         (time_to_money(&s, goal), time_to_money(&s, get_cost(order, &s)));
@@ -114,18 +115,20 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
 
     while let Some(Node(time, current_state, order)) = pri_q.pop() {
         iter += 1;
-        if iter >= MAX_NODES || time >= best_time {
-            if iter >= MAX_NODES {
-                break;
-            }
+        if iter >= MAX_NODES {
+            break;
+        }
+        // if we are already later than best time
+        if current_state.time >= best_time {
+            continue;
+        }
+        let (next_state, next_complete_time, done) = buy_order(current_state, order, goal);
+        // if the purchase made us worse off
+        if next_complete_time >= current_state.time + time_to_money(&current_state, goal) {
             continue;
         }
 
-        let (next_state, ft, done) = buy_order(current_state, order, goal);
-        if ft >= current_state.time + time_to_money(&current_state, goal) {
-            continue;
-        }
-
+        // check memory
         if mem.get(&next_state.inventory).map_or(true, |&(mt, mm, _)| {
             next_state.time < mt || (next_state.time == mt && next_state.money > mm)
         }) {
@@ -134,8 +137,9 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
                 pri_q.extend((0..NUM_RES).map(|i| Node(next_state.time, next_state, i)));
             }
         }
-        if ft < best_time {
-            best_time = ft;
+        // if better we update
+        if next_complete_time < best_time {
+            best_time = next_complete_time;
             best_g = next_state;
             if verbose {
                 println!("Iter: {iter}: New Best Time Found: {best_time}");
@@ -144,13 +148,11 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
     }
 
     best_g = step(best_g, time_to_money(&best_g, goal));
-
     if verbose {
         for line in reconstruct_path(&mem, best_g.inventory) {
             println!("{line}");
         }
     }
-
     SolveResult {
         best_time,
         final_money: best_g.money,
