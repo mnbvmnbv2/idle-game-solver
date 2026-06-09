@@ -113,7 +113,7 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
     let s0 = GameState::new();
     mem.insert(s0.inventory, (s0.time, s0.money, usize::MAX));
 
-    let (mut best_time, mut best_g) = (s0.time + time_to_money(&s0, goal), s0);
+    let (mut best_time, mut best_game) = (s0.time + time_to_money(&s0, goal), s0);
     let mut pri_q: BinaryHeap<_> = (0..NUM_RES).map(|i| Node(s0.time, s0, i)).collect();
     let mut iter = 0;
 
@@ -151,24 +151,24 @@ fn search(goal: f64, verbose: bool) -> SolveResult {
         // if better we update
         if next_complete_time < best_time {
             best_time = next_complete_time;
-            best_g = next_state;
+            best_game = next_state;
             if verbose {
                 println!("Iter: {iter}: New Best Time Found: {best_time}");
             }
         }
     }
 
-    best_g = step(best_g, time_to_money(&best_g, goal));
+    best_game = step(best_game, time_to_money(&best_game, goal));
     if verbose {
-        for line in reconstruct_path(&mem, best_g.inventory) {
+        for line in reconstruct_path(&mem, best_game.inventory) {
             println!("{line}");
         }
     }
     SolveResult {
         best_time,
-        final_money: best_g.money,
+        final_money: best_game.money,
         iterations: iter,
-        final_inventory: best_g.inventory,
+        final_inventory: best_game.inventory,
     }
 }
 
