@@ -1,6 +1,5 @@
 mod tracing;
 
-use rustc_hash::FxHashMap as HashMap;
 use std::{cmp::Ordering, collections::BinaryHeap, env, time::Instant};
 
 use tracing::{AcceptedNode, JsonTrace, NullTrace, SearchObserver};
@@ -93,7 +92,6 @@ impl GameData {
         let mut delta = Vec::with_capacity(NUM_RES);
         for i in 0..NUM_RES {
             let max_q = max_inventory[i] as usize;
-            // Need yield up to max_q + 1 so delta[max_q] is safe.
             let mut ys = Vec::with_capacity(max_q + 2);
             for q in 0..=(max_q + 1) {
                 ys.push((RESOURCES[i].yield_fn)(q as i32));
@@ -133,6 +131,59 @@ impl GameData {
     fn initial_state(&self) -> GameState {
         let inventory = [1, 0, 0];
         GameState { time: 0, money: 0., inventory, income: self.income(&inventory) }
+    }
+}
+#[derive(Clone, Copy, Debug)]
+struct MemoEntry {
+    time: i64,
+    money: f64,
+    bought: usize,
+    node_id: usize,
+}
+impl MemoEntry {
+    const EMPTY: Self =
+        Self { time: i64::MAX, money: f64::NEG_INFINITY, bought: usize::MAX, node_id: usize::MAX };
+    #[inline]
+    fn is_empty(self) -> bool {
+        self.time == i64::MAX
+    }
+}
+#[derive(Debug)]
+struct MemoTable {
+    dims: [usize; NUM_RES],
+    data: Vec<MemoEntry>,
+}
+impl MemoTable {
+    fn new(max_inventory: Inv) -> Self {
+        let dims = [
+            max_inventory[0] as usize + 1,
+            max_inventory[1] as usize + 1,
+            max_inventory[2] as usize + 1,
+        ];
+        let len: usize = dims.iter().product();
+        Self { dims, data: vec![MemoEntry::EMPTY; len] }
+    }
+    #[inline]
+    fn idx(&self, inv: &Inv) -> usize {
+        let a = inv[0] as usize;
+        let b = inv[1] as usize;
+        let c = inv[2] as usize;
+        (a * self.dims[1] + b) * self.dims[2] + c
+    }
+    #[inline]
+    fn get(&self, inv: &Inv) -> Option<MemoEntry> {
+        let m = self.data[self.idx(inv)];
+        (!m.is_empty()).then_some(m)
+    }
+    #[inline]
+    fn insert(&mut self, inv: Inv, entry: MemoEntry) {
+        let idx = self.idx(&inv);
+        self.data[idx] = entry;
+    }
+    #[inline]
+    fn is_better(&self, inv: &Inv, time: i64, money: f64) -> bool {
+        let m = self.data[self.idx(inv)];
+        m.is_empty() || time < m.time || (time == m.time && money > m.money)
     }
 }
 
@@ -177,10 +228,6 @@ fn buy_next(
     Some(BuyResult { state: ns, finish_time: finish_time(&ns, goal), wait, cost_paid: c })
 }
 
-// Safe local ordering dominance.
-// Candidate B is dominated if there exists A such that:
-// - A can be bought no later than B.
-// - A pays back its cost before B would have been bought.
 #[inline]
 fn next_buy_is_order_dominated(
     candidate: usize,
@@ -208,14 +255,17 @@ fn next_buy_is_order_dominated(
     false
 }
 
-fn reconstruct_path(mem: &HashMap<Inv, (i64, f64, usize, usize)>, mut inv: Inv) -> Vec<String> {
+fn reconstruct_path(mem: &MemoTable, mut inv: Inv) -> Vec<String> {
     let mut log = Vec::new();
-    while let Some(&(t, _, bought, _node_id)) = mem.get(&inv) {
-        if bought == usize::MAX {
+    while let Some(m) = mem.get(&inv) {
+        if m.bought == usize::MAX {
             break;
         }
-        log.push(format!("At time {}, bought {}, inventory {:?}", t, RESOURCES[bought].name, inv));
-        inv[bought] -= 1;
+        log.push(format!(
+            "At time {}, bought {}, inventory {:?}",
+            m.time, RESOURCES[m.bought].name, inv
+        ));
+        inv[m.bought] -= 1;
     }
     log.reverse();
     log
@@ -247,7 +297,7 @@ impl PartialOrd for Node {
 fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> SolveResult {
     let data = GameData::new(goal);
 
-    let mut mem = HashMap::with_capacity_and_hasher(100_000, Default::default());
+    let mut mem = MemoTable::new(data.max_inventory);
     let mut q = BinaryHeap::new();
     let s0 = data.initial_state();
     let s0_finish = finish_time(&s0, goal);
@@ -263,7 +313,10 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
     });
 
     observer.start(root_id, s0_finish);
-    mem.insert(s0.inventory, (0, 0., usize::MAX, root_id));
+    mem.insert(
+        s0.inventory,
+        MemoEntry { time: 0, money: 0., bought: usize::MAX, node_id: root_id },
+    );
     q.push(Node { priority: s0.time, state: s0, id: root_id });
 
     let mut best_time = s0_finish;
@@ -286,8 +339,8 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
             continue;
         }
 
-        if let Some(&(mt, mm, _, best_mem_id)) = mem.get(&s.inventory) {
-            if id != best_mem_id && (s.time > mt || (s.time == mt && s.money < mm)) {
+        if let Some(m) = mem.get(&s.inventory) {
+            if id != m.node_id && (s.time > m.time || (s.time == m.time && s.money < m.money)) {
                 observer.prune(id, iter, "lazy_deleted_dominated_inventory");
                 continue;
             }
@@ -329,11 +382,7 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
                 continue;
             }
 
-            let is_better = mem.get(&buy.state.inventory).map_or(true, |&(mt, mm, _, _)| {
-                buy.state.time < mt || (buy.state.time == mt && buy.state.money > mm)
-            });
-
-            if !is_better {
+            if !mem.is_better(&buy.state.inventory, buy.state.time, buy.state.money) {
                 observer.reject_buy(id, iter, i, "dominated_inventory");
                 continue;
             }
@@ -350,7 +399,15 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
 
             observer.accept_buy(child_id, id, iter, i, buy.finish_time);
 
-            mem.insert(buy.state.inventory, (buy.state.time, buy.state.money, i, child_id));
+            mem.insert(
+                buy.state.inventory,
+                MemoEntry {
+                    time: buy.state.time,
+                    money: buy.state.money,
+                    bought: i,
+                    node_id: child_id,
+                },
+            );
 
             if buy.finish_time < best_time {
                 best_time = buy.finish_time;
