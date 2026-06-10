@@ -1,0 +1,1018 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Idle Solver Search Visualizer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+
+  <style>
+    :root {
+      --bg: #080b12;
+      --panel: rgba(17, 23, 38, 0.88);
+      --panel2: rgba(24, 33, 54, 0.9);
+      --text: #eaf0ff;
+      --muted: #99a7c4;
+      --line: rgba(255, 255, 255, 0.09);
+      --accent: #7aa2ff;
+      --good: #77f2a1;
+      --warn: #ffd166;
+      --bad: #ff6b8a;
+      --frontier: #9d7aff;
+      --best: #77f2a1;
+      --current: #ffffff;
+      --node: #3f8cff;
+      --pruned: #ff6b8a;
+      --shadow: 0 16px 60px rgba(0, 0, 0, 0.35);
+      --radius: 18px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 15% 10%, rgba(122, 162, 255, 0.17), transparent 30%),
+        radial-gradient(circle at 85% 20%, rgba(157, 122, 255, 0.14), transparent 32%),
+        radial-gradient(circle at 70% 90%, rgba(119, 242, 161, 0.08), transparent 30%),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+    }
+
+    #app {
+      display: grid;
+      grid-template-columns: 360px 1fr 390px;
+      grid-template-rows: auto 1fr auto;
+      gap: 14px;
+      height: 100%;
+      padding: 14px;
+    }
+
+    header {
+      grid-column: 1 / 4;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 18px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0.2px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+
+    .file-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    input[type="file"] {
+      color: var(--muted);
+      font-size: 13px;
+      max-width: 250px;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+      color: var(--text);
+      padding: 9px 11px;
+      cursor: pointer;
+      font-weight: 650;
+      transition: transform 0.12s ease, border 0.12s ease, background 0.12s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(122, 162, 255, 0.55);
+    }
+
+    button.active {
+      border-color: rgba(119, 242, 161, 0.8);
+      box-shadow: 0 0 0 3px rgba(119, 242, 161, 0.12);
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    #left {
+      grid-column: 1;
+      grid-row: 2;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #center {
+      grid-column: 2;
+      grid-row: 2;
+      position: relative;
+    }
+
+    #right {
+      grid-column: 3;
+      grid-row: 2;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #bottom {
+      grid-column: 1 / 4;
+      grid-row: 3;
+      padding: 12px 16px;
+    }
+
+    .panel-title {
+      padding: 14px 16px 10px;
+      font-weight: 750;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section:last-child {
+      border-bottom: 0;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .stat {
+      padding: 11px;
+      background: rgba(255,255,255,0.045);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+
+    .stat-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 5px;
+    }
+
+    .stat-value {
+      font-family: var(--mono);
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      margin: 8px 0;
+    }
+
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    #tree {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: grab;
+    }
+
+    #tree:active {
+      cursor: grabbing;
+    }
+
+    .link {
+      fill: none;
+      stroke: rgba(255, 255, 255, 0.12);
+      stroke-width: 1.3px;
+    }
+
+    .link.best-path {
+      stroke: var(--best);
+      stroke-width: 2.8px;
+      filter: drop-shadow(0 0 8px rgba(119, 242, 161, 0.5));
+    }
+
+    .node circle {
+      stroke: rgba(255,255,255,0.5);
+      stroke-width: 1px;
+      transition: r 0.12s ease;
+    }
+
+    .node text {
+      fill: var(--muted);
+      font-size: 10px;
+      pointer-events: none;
+      paint-order: stroke;
+      stroke: rgba(8,11,18,0.8);
+      stroke-width: 3px;
+    }
+
+    .node:hover circle {
+      r: 8;
+    }
+
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      opacity: 0;
+      transform: translate(-50%, -120%);
+      background: rgba(5, 8, 14, 0.94);
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 12px;
+      padding: 10px 12px;
+      box-shadow: var(--shadow);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text);
+      white-space: nowrap;
+      z-index: 20;
+    }
+
+    #node-details {
+      overflow: auto;
+      flex: 1;
+      padding: 14px 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    td {
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      vertical-align: top;
+    }
+
+    td:first-child {
+      color: var(--muted);
+      width: 40%;
+    }
+
+    td:last-child {
+      font-family: var(--mono);
+      overflow-wrap: anywhere;
+    }
+
+    .path-list {
+      max-height: 260px;
+      overflow: auto;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--muted);
+      padding-right: 4px;
+    }
+
+    .path-item {
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      cursor: pointer;
+    }
+
+    .path-item:hover {
+      color: var(--text);
+    }
+
+    .timeline-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-family: var(--mono);
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .warn {
+      color: var(--warn);
+    }
+
+    .search-box {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      padding: 10px 11px;
+      border-radius: 12px;
+      outline: none;
+      font-family: var(--mono);
+    }
+
+    .metric-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 75px 1fr 70px;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .bar {
+      height: 8px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .bar > div {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), var(--frontier));
+    }
+
+    @media (max-width: 1150px) {
+      #app {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 260px 1fr 320px auto;
+        overflow: auto;
+      }
+
+      header, #left, #center, #right, #bottom {
+        grid-column: 1;
+      }
+
+      #left { grid-row: 2; }
+      #center { grid-row: 3; min-height: 620px; }
+      #right { grid-row: 4; }
+      #bottom { grid-row: 5; }
+
+      body {
+        overflow: auto;
+      }
+    }
+  </style>
+</head>
+
+<body>
+<div id="app">
+  <header>
+    <div>
+      <h1>Idle Solver Search Visualizer</h1>
+      <div class="subtitle">Explore accepted nodes, frontier evolution, best path, pruning, and search dynamics.</div>
+    </div>
+
+    <div class="file-control">
+      <input id="fileInput" type="file" accept="application/json,.json" />
+      <button id="loadDefaultBtn">Load trace.json</button>
+    </div>
+  </header>
+
+  <aside id="left" class="panel">
+    <div class="panel-title">Run summary</div>
+
+    <div class="section">
+      <div class="stats-grid" id="stats"></div>
+    </div>
+
+    <div class="section">
+      <div class="panel-title" style="padding:0 0 10px;border:0;">Legend</div>
+      <div class="legend-row"><span class="dot" style="background:var(--node)"></span> Accepted node</div>
+      <div class="legend-row"><span class="dot" style="background:var(--frontier)"></span> Frontier / queued-ish</div>
+      <div class="legend-row"><span class="dot" style="background:var(--current)"></span> Current pop event</div>
+      <div class="legend-row"><span class="dot" style="background:var(--best)"></span> Best path</div>
+      <div class="legend-row"><span class="dot" style="background:var(--pruned)"></span> Pruned event</div>
+    </div>
+
+    <div class="section">
+      <div class="panel-title" style="padding:0 0 10px;border:0;">Best path</div>
+      <div class="path-list" id="bestPath"></div>
+    </div>
+  </aside>
+
+  <main id="center" class="panel">
+    <svg id="tree"></svg>
+    <div id="tooltip" class="tooltip"></div>
+  </main>
+
+  <aside id="right" class="panel">
+    <div class="panel-title">Node inspector</div>
+
+    <div class="section">
+      <input id="searchBox" class="search-box" placeholder="Jump to node id or inventory, e.g. 1234 or [10,5,2]" />
+    </div>
+
+    <div id="node-details">
+      <div class="small">Load a trace and click a node.</div>
+    </div>
+  </aside>
+
+  <footer id="bottom" class="panel">
+    <div class="timeline-row">
+      <button id="playBtn">Play</button>
+      <input id="timeline" type="range" min="0" max="0" value="0" />
+      <span class="pill" id="iterPill">iter 0</span>
+      <span class="pill" id="eventPill">event 0 / 0</span>
+      <div class="controls">
+        <button id="fitBtn">Fit</button>
+        <button id="bestBtn">Best path</button>
+        <button id="labelsBtn">Labels</button>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script>
+let trace = null;
+let nodesById = new Map();
+let childrenById = new Map();
+let eventIndex = 0;
+let selectedNodeId = null;
+let showLabels = false;
+let playTimer = null;
+
+const svg = d3.select("#tree");
+const gRoot = svg.append("g");
+const gLinks = gRoot.append("g");
+const gNodes = gRoot.append("g");
+const tooltip = d3.select("#tooltip");
+
+const zoom = d3.zoom()
+  .scaleExtent([0.05, 8])
+  .on("zoom", (event) => {
+    gRoot.attr("transform", event.transform);
+  });
+
+svg.call(zoom);
+
+const fmt = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 2
+});
+
+const fmtInt = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 0
+});
+
+function formatNum(x) {
+  if (x === null || x === undefined) return "";
+  if (Math.abs(x) >= 1e6) return Number(x).toExponential(3);
+  return fmt.format(x);
+}
+
+function formatInt(x) {
+  if (x === null || x === undefined) return "";
+  return fmtInt.format(x);
+}
+
+function nodeColor(node, state) {
+  if (!node) return "var(--node)";
+  if (state.bestSet.has(node.id)) return "var(--best)";
+  if (node.id === state.currentNode) return "var(--current)";
+  if (state.prunedSet.has(node.id)) return "var(--pruned)";
+  if (state.frontierSet.has(node.id)) return "var(--frontier)";
+  if (node.iter_created <= state.iter) return "var(--node)";
+  return "rgba(255,255,255,0.08)";
+}
+
+function nodeOpacity(node, state) {
+  return node.iter_created <= state.iter ? 1 : 0.08;
+}
+
+function radiusForNode(node) {
+  const base = 3.5;
+  const incomeBoost = Math.min(7, Math.log10(Math.max(1, node.income)) * 1.1);
+  return base + incomeBoost;
+}
+
+function buildIndexes() {
+  nodesById = new Map(trace.nodes.map(n => [n.id, n]));
+  childrenById = new Map();
+
+  for (const n of trace.nodes) {
+    if (n.parent !== null && n.parent !== undefined) {
+      if (!childrenById.has(n.parent)) childrenById.set(n.parent, []);
+      childrenById.get(n.parent).push(n.id);
+    }
+  }
+}
+
+function computeLayout() {
+  const nodes = trace.nodes;
+
+  const depthBuckets = new Map();
+  for (const n of nodes) {
+    if (!depthBuckets.has(n.depth)) depthBuckets.set(n.depth, []);
+    depthBuckets.get(n.depth).push(n);
+  }
+
+  const maxDepth = Math.max(...nodes.map(n => n.depth));
+  const widthPerDepth = 190;
+  const minYGap = 26;
+
+  for (const [depth, bucket] of depthBuckets.entries()) {
+    bucket.sort((a, b) => a.iter_created - b.iter_created);
+
+    const totalHeight = Math.max(800, bucket.length * minYGap);
+    for (let i = 0; i < bucket.length; i++) {
+      bucket[i].x = depth * widthPerDepth;
+      bucket[i].y = i * minYGap - totalHeight / 2;
+    }
+  }
+
+  // Optional smoothing: place parent near average child y where possible.
+  for (let pass = 0; pass < 3; pass++) {
+    for (let depth = maxDepth - 1; depth >= 0; depth--) {
+      const bucket = depthBuckets.get(depth) || [];
+      for (const n of bucket) {
+        const kids = (childrenById.get(n.id) || [])
+          .map(id => nodesById.get(id))
+          .filter(Boolean);
+
+        if (kids.length) {
+          const avg = d3.mean(kids, k => k.y);
+          n.y = n.y * 0.65 + avg * 0.35;
+        }
+      }
+    }
+  }
+}
+
+function getTimelineState() {
+  if (!trace) {
+    return {
+      iter: 0,
+      currentNode: null,
+      frontierSet: new Set(),
+      bestSet: new Set(),
+      prunedSet: new Set(),
+      acceptedSet: new Set()
+    };
+  }
+
+  const events = trace.events.slice(0, eventIndex + 1);
+  const frontierSet = new Set();
+  const prunedSet = new Set();
+  const acceptedSet = new Set();
+  const bestSet = new Set(trace.best_path_node_ids || []);
+
+  let currentNode = null;
+  let iter = 0;
+
+  for (const e of events) {
+    iter = Math.max(iter, e.iter || 0);
+
+    if (e.type === "Start") {
+      frontierSet.add(e.node);
+      acceptedSet.add(e.node);
+      currentNode = e.node;
+    }
+
+    if (e.type === "Accept") {
+      frontierSet.add(e.node);
+      acceptedSet.add(e.node);
+    }
+
+    if (e.type === "Pop") {
+      currentNode = e.node;
+      frontierSet.delete(e.node);
+    }
+
+    if (e.type === "Prune") {
+      prunedSet.add(e.node);
+      frontierSet.delete(e.node);
+    }
+  }
+
+  return {
+    iter,
+    currentNode,
+    frontierSet,
+    bestSet,
+    prunedSet,
+    acceptedSet
+  };
+}
+
+function renderStats() {
+  const m = trace.meta;
+  const stats = [
+    ["Goal", formatNum(m.goal)],
+    ["Best time", formatInt(m.best_time)],
+    ["Iterations", formatInt(m.iterations)],
+    ["Final money", formatNum(m.final_money)],
+    ["Final inv", JSON.stringify(m.final_inventory)],
+    ["Trace nodes", formatInt(trace.nodes.length)],
+    ["Events", formatInt(trace.events.length)],
+    ["Truncated", `${m.truncated_nodes || m.truncated_events}`],
+  ];
+
+  document.querySelector("#stats").innerHTML = stats.map(([label, value]) => `
+    <div class="stat">
+      <div class="stat-label">${label}</div>
+      <div class="stat-value">${value}</div>
+    </div>
+  `).join("");
+
+  if (m.truncated_nodes || m.truncated_events) {
+    document.querySelector("#stats").innerHTML += `
+      <div class="stat" style="grid-column:1/3;">
+        <div class="stat-label warn">Trace warning</div>
+        <div class="stat-value warn">Trace was truncated. Increase TRACE_MAX_NODES / TRACE_MAX_EVENTS for more detail.</div>
+      </div>
+    `;
+  }
+}
+
+function renderBestPath() {
+  const path = trace.best_path_node_ids || [];
+
+  document.querySelector("#bestPath").innerHTML = path.map((id, idx) => {
+    const n = nodesById.get(id);
+    if (!n) return "";
+    const action = n.bought_name ? `buy ${n.bought_name}` : "start";
+
+    return `
+      <div class="path-item" onclick="selectNode(${id}); centerNode(${id});">
+        #${idx} · node ${id}<br/>
+        ${action} · t=${formatInt(n.time)} · finish=${formatInt(n.finish_time)}<br/>
+        inv=${JSON.stringify(n.inventory)}
+      </div>
+    `;
+  }).join("");
+}
+
+function renderTree() {
+  const state = getTimelineState();
+  const bestSet = state.bestSet;
+
+  const links = trace.nodes
+    .filter(n => n.parent !== null && n.parent !== undefined)
+    .map(n => ({
+      source: nodesById.get(n.parent),
+      target: n,
+      best: bestSet.has(n.id) && bestSet.has(n.parent)
+    }))
+    .filter(l => l.source && l.target);
+
+  gLinks.selectAll("path")
+    .data(links, d => d.target.id)
+    .join("path")
+    .attr("class", d => d.best ? "link best-path" : "link")
+    .attr("d", d => {
+      const sx = d.source.x;
+      const sy = d.source.y;
+      const tx = d.target.x;
+      const ty = d.target.y;
+      const mx = (sx + tx) / 2;
+      return `M${sx},${sy} C${mx},${sy} ${mx},${ty} ${tx},${ty}`;
+    })
+    .style("opacity", d => {
+      if (d.target.iter_created <= state.iter) return d.best ? 1 : 0.55;
+      return 0.04;
+    });
+
+  const nodeSel = gNodes.selectAll("g.node")
+    .data(trace.nodes, d => d.id)
+    .join(enter => {
+      const g = enter.append("g")
+        .attr("class", "node")
+        .on("click", (event, d) => {
+          selectNode(d.id);
+          event.stopPropagation();
+        })
+        .on("mousemove", (event, d) => {
+          tooltip
+            .style("opacity", 1)
+            .style("left", `${event.clientX}px`)
+            .style("top", `${event.clientY}px`)
+            .html(`
+              node ${d.id}<br/>
+              t=${formatInt(d.time)} finish=${formatInt(d.finish_time)}<br/>
+              income=${formatNum(d.income)} inv=${JSON.stringify(d.inventory)}
+            `);
+        })
+        .on("mouseleave", () => tooltip.style("opacity", 0));
+
+      g.append("circle");
+      g.append("text")
+        .attr("x", 10)
+        .attr("y", 3);
+
+      return g;
+    });
+
+  nodeSel
+    .attr("transform", d => `translate(${d.x},${d.y})`)
+    .style("display", d => {
+      // Render all, but hidden future nodes are faint.
+      return "block";
+    });
+
+  nodeSel.select("circle")
+    .attr("r", d => selectedNodeId === d.id ? radiusForNode(d) + 4 : radiusForNode(d))
+    .attr("fill", d => nodeColor(d, state))
+    .attr("opacity", d => nodeOpacity(d, state))
+    .attr("stroke", d => selectedNodeId === d.id ? "white" : "rgba(255,255,255,0.45)")
+    .attr("stroke-width", d => selectedNodeId === d.id ? 3 : 1);
+
+  nodeSel.select("text")
+    .text(d => showLabels && d.iter_created <= state.iter ? `${d.id} ${d.bought_name || ""}` : "")
+    .attr("opacity", d => d.iter_created <= state.iter ? 1 : 0);
+
+  document.querySelector("#iterPill").textContent = `iter ${formatInt(state.iter)}`;
+  document.querySelector("#eventPill").textContent = `event ${formatInt(eventIndex + 1)} / ${formatInt(trace.events.length)}`;
+}
+
+function selectNode(id) {
+  selectedNodeId = id;
+  const n = nodesById.get(id);
+
+  if (!n) return;
+
+  const resourceRows = trace.resources.map((r, i) => {
+    return `<tr><td>${r.name}</td><td>${n.inventory[i]}</td></tr>`;
+  }).join("");
+
+  const improvement = n.finish_time ? trace.meta.best_time / n.finish_time : null;
+
+  document.querySelector("#node-details").innerHTML = `
+    <table>
+      <tr><td>Node id</td><td>${n.id}</td></tr>
+      <tr><td>Parent</td><td>${n.parent ?? ""}</td></tr>
+      <tr><td>Bought</td><td>${n.bought_name ?? "start"}</td></tr>
+      <tr><td>Depth</td><td>${n.depth}</td></tr>
+      <tr><td>Created iter</td><td>${formatInt(n.iter_created)}</td></tr>
+      <tr><td>Time</td><td>${formatInt(n.time)}</td></tr>
+      <tr><td>Money</td><td>${formatNum(n.money)}</td></tr>
+      <tr><td>Income</td><td>${formatNum(n.income)}</td></tr>
+      <tr><td>Finish time</td><td>${formatInt(n.finish_time)}</td></tr>
+      <tr><td>Wait for buy</td><td>${n.wait === null || n.wait === undefined ? "" : formatInt(n.wait)}</td></tr>
+      <tr><td>Cost paid</td><td>${n.cost_paid === null || n.cost_paid === undefined ? "" : formatNum(n.cost_paid)}</td></tr>
+      <tr><td>Inventory</td><td>${JSON.stringify(n.inventory)}</td></tr>
+    </table>
+
+    <div style="height:14px"></div>
+
+    <div class="panel-title" style="padding:0 0 10px;border:0;">Inventory</div>
+    <table>${resourceRows}</table>
+
+    <div style="height:14px"></div>
+
+    <div class="panel-title" style="padding:0 0 10px;border:0;">Metrics</div>
+    <div class="metric-bars">
+      ${metricBar("Income", n.income, d3.max(trace.nodes, d => d.income))}
+      ${metricBar("Money", n.money, d3.max(trace.nodes, d => d.money))}
+      ${metricBar("Depth", n.depth, d3.max(trace.nodes, d => d.depth))}
+      ${metricBar("Time", n.time, d3.max(trace.nodes, d => d.time))}
+    </div>
+  `;
+
+  renderTree();
+}
+
+function metricBar(label, value, max) {
+  const pct = max > 0 ? Math.max(0, Math.min(100, value / max * 100)) : 0;
+
+  return `
+    <div class="bar-row">
+      <div>${label}</div>
+      <div class="bar"><div style="width:${pct}%"></div></div>
+      <div>${formatNum(value)}</div>
+    </div>
+  `;
+}
+
+function centerNode(id) {
+  const n = nodesById.get(id);
+  if (!n) return;
+
+  const rect = svg.node().getBoundingClientRect();
+  const scale = 1.4;
+  const transform = d3.zoomIdentity
+    .translate(rect.width / 2 - n.x * scale, rect.height / 2 - n.y * scale)
+    .scale(scale);
+
+  svg.transition()
+    .duration(500)
+    .call(zoom.transform, transform);
+}
+
+function fitView() {
+  if (!trace || !trace.nodes.length) return;
+
+  const xs = trace.nodes.map(n => n.x);
+  const ys = trace.nodes.map(n => n.y);
+
+  const minX = d3.min(xs);
+  const maxX = d3.max(xs);
+  const minY = d3.min(ys);
+  const maxY = d3.max(ys);
+
+  const rect = svg.node().getBoundingClientRect();
+  const width = maxX - minX + 200;
+  const height = maxY - minY + 200;
+
+  const scale = Math.min(rect.width / width, rect.height / height, 1.2);
+  const tx = rect.width / 2 - ((minX + maxX) / 2) * scale;
+  const ty = rect.height / 2 - ((minY + maxY) / 2) * scale;
+
+  svg.transition()
+    .duration(650)
+    .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+
+function setupTimeline() {
+  const timeline = document.querySelector("#timeline");
+  timeline.max = Math.max(0, trace.events.length - 1);
+  timeline.value = 0;
+  eventIndex = 0;
+
+  timeline.oninput = () => {
+    eventIndex = Number(timeline.value);
+    renderTree();
+  };
+}
+
+function play() {
+  if (playTimer) {
+    clearInterval(playTimer);
+    playTimer = null;
+    document.querySelector("#playBtn").textContent = "Play";
+    return;
+  }
+
+  document.querySelector("#playBtn").textContent = "Pause";
+
+  playTimer = setInterval(() => {
+    eventIndex += Math.max(1, Math.floor(trace.events.length / 800));
+
+    if (eventIndex >= trace.events.length - 1) {
+      eventIndex = trace.events.length - 1;
+      clearInterval(playTimer);
+      playTimer = null;
+      document.querySelector("#playBtn").textContent = "Play";
+    }
+
+    document.querySelector("#timeline").value = eventIndex;
+    renderTree();
+  }, 30);
+}
+
+async function loadUrl(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Could not load ${url}: ${res.status}`);
+  const json = await res.json();
+  loadTrace(json);
+}
+
+function loadTrace(json) {
+  trace = json;
+  buildIndexes();
+  computeLayout();
+  renderStats();
+  renderBestPath();
+  setupTimeline();
+  selectedNodeId = trace.best_path_node_ids?.at(-1) ?? trace.nodes[0]?.id ?? null;
+  renderTree();
+  if (selectedNodeId !== null) selectNode(selectedNodeId);
+  setTimeout(fitView, 50);
+}
+
+document.querySelector("#loadDefaultBtn").addEventListener("click", async () => {
+  try {
+    await loadUrl("trace.json");
+  } catch (e) {
+    alert(e.message + "\n\nTip: run `python3 -m http.server 8080` in this folder.");
+  }
+});
+
+document.querySelector("#fileInput").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const text = await file.text();
+  loadTrace(JSON.parse(text));
+});
+
+document.querySelector("#playBtn").addEventListener("click", play);
+document.querySelector("#fitBtn").addEventListener("click", fitView);
+
+document.querySelector("#bestBtn").addEventListener("click", () => {
+  const last = trace?.best_path_node_ids?.at(-1);
+  if (last !== undefined) {
+    selectNode(last);
+    centerNode(last);
+  }
+});
+
+document.querySelector("#labelsBtn").addEventListener("click", () => {
+  showLabels = !showLabels;
+  document.querySelector("#labelsBtn").classList.toggle("active", showLabels);
+  renderTree();
+});
+
+document.querySelector("#searchBox").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !trace) return;
+
+  const raw = event.target.value.trim();
+  if (!raw) return;
+
+  let node = null;
+
+  if (/^\d+$/.test(raw)) {
+    node = nodesById.get(Number(raw));
+  } else {
+    try {
+      const inv = JSON.parse(raw);
+      node = trace.nodes.find(n => JSON.stringify(n.inventory) === JSON.stringify(inv));
+    } catch {
+      node = null;
+    }
+  }
+
+  if (node) {
+    selectNode(node.id);
+    centerNode(node.id);
+  } else {
+    alert("No matching node found.");
+  }
+});
+
+svg.on("click", () => {
+  selectedNodeId = null;
+  renderTree();
+});
+
+// Try loading trace.json automatically.
+loadUrl("trace.json").catch(() => {
+  // Fine. User can use file picker.
+});
+</script>
+</body>
+</html>
