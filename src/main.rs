@@ -43,11 +43,38 @@ pub struct SolveResult {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct BuyResult {
+enum Action {
+    BuyResource(usize),
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ActionResult {
+    action: Action,
     state: GameState,
     finish_time: i64,
     wait: i64,
     cost_paid: f64,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+struct MemoKey {
+    inventory: Inv,
+    // Later:
+    // upgrades: u64,
+    // ascensions: i32,
+    // prestige_points: i64,
+}
+
+impl MemoKey {
+    #[inline]
+    fn from_state(s: &GameState) -> Self {
+        Self { inventory: s.inventory }
+    }
+
+    #[inline]
+    fn from_inventory(inventory: Inv) -> Self {
+        Self { inventory }
+    }
 }
 
 #[derive(Debug)]
@@ -110,38 +137,45 @@ struct MemoEntry {
     bought: usize,
     node_id: usize,
 }
-impl MemoEntry {
-    const EMPTY: Self =
-        Self { time: i64::MAX, money: f64::NEG_INFINITY, bought: usize::MAX, node_id: usize::MAX };
-    #[inline]
-    fn is_empty(self) -> bool {
-        self.time == i64::MAX
-    }
-}
 #[derive(Debug)]
 struct MemoTable {
-    data: FxHashMap<Inv, MemoEntry>,
+    data: FxHashMap<MemoKey, MemoEntry>,
 }
 
 impl MemoTable {
-    fn new(_max_inventory: Inv) -> Self {
+    fn new() -> Self {
         Self { data: FxHashMap::default() }
     }
     #[inline]
-    fn get(&self, inv: &Inv) -> Option<MemoEntry> {
-        self.data.get(inv).copied()
+    fn get_key(&self, key: &MemoKey) -> Option<MemoEntry> {
+        self.data.get(key).copied()
     }
     #[inline]
-    fn insert(&mut self, inv: Inv, entry: MemoEntry) {
-        self.data.insert(inv, entry);
+    fn get_state(&self, state: &GameState) -> Option<MemoEntry> {
+        self.get_key(&MemoKey::from_state(state))
     }
     #[inline]
-    fn is_better(&self, inv: &Inv, time: i64, money: f64) -> bool {
-        if let Some(m) = self.data.get(inv) {
-            time < m.time || (time == m.time && money > m.money)
-        } else {
-            true
+    fn get_inventory(&self, inventory: Inv) -> Option<MemoEntry> {
+        self.get_key(&MemoKey::from_inventory(inventory))
+    }
+    #[inline]
+    fn insert_key(&mut self, key: MemoKey, entry: MemoEntry) {
+        self.data.insert(key, entry);
+    }
+    #[inline]
+    fn insert_state(&mut self, state: &GameState, entry: MemoEntry) {
+        self.insert_key(MemoKey::from_state(state), entry);
+    }
+    #[inline]
+    fn is_better_key(&self, key: &MemoKey, time: i64, money: f64) -> bool {
+        match self.data.get(key) {
+            Some(m) => time < m.time || (time == m.time && money > m.money),
+            None => true,
         }
+    }
+    #[inline]
+    fn is_better_state(&self, state: &GameState) -> bool {
+        self.is_better_key(&MemoKey::from_state(state), state.time, state.money)
     }
 }
 
@@ -165,22 +199,58 @@ fn finish_time(s: &GameState, goal: f64) -> i64 {
 }
 
 #[inline]
-fn buy_next(
+fn available_actions(data: &GameData, s: &GameState) -> Vec<Action> {
+    let mut actions = Vec::new();
+    for i in 0..NUM_RES {
+        if data.can_buy_more(&s.inventory, i) {
+            actions.push(Action::BuyResource(i));
+        }
+    }
+    actions
+}
+#[inline]
+fn buy_resource(
     data: &GameData,
     s: &GameState,
     i: usize,
     goal: f64,
-    c: f64,
+    cost: f64,
     wait: i64,
-) -> Option<BuyResult> {
+) -> Option<ActionResult> {
     if wait == i64::MAX || s.time + wait >= finish_time(s, goal) {
         return None;
     }
     let mut ns = step(s, wait);
-    ns.money -= c;
+    ns.money -= cost;
     ns.inventory[i] += 1;
     ns.income += data.delta(i, s.inventory[i]);
-    Some(BuyResult { finish_time: finish_time(&ns, goal), state: ns, wait, cost_paid: c })
+    Some(ActionResult {
+        action: Action::BuyResource(i),
+        state: ns,
+        finish_time: finish_time(&ns, goal),
+        wait,
+        cost_paid: cost,
+    })
+}
+
+#[inline]
+fn apply_action(
+    data: &GameData,
+    s: &GameState,
+    action: Action,
+    goal: f64,
+    costs: &[f64; NUM_RES],
+    waits: &[i64; NUM_RES],
+) -> Option<ActionResult> {
+    match action {
+        Action::BuyResource(i) => buy_resource(data, s, i, goal, costs[i], waits[i]),
+    }
+}
+#[inline]
+fn action_resource_index(action: Action) -> Option<usize> {
+    match action {
+        Action::BuyResource(i) => Some(i),
+    }
 }
 
 #[inline]
@@ -202,7 +272,7 @@ fn next_buy_is_order_dominated(
 
 fn reconstruct_path(mem: &MemoTable, mut inv: Inv) -> Vec<String> {
     let mut log = Vec::new();
-    while let Some(m) = mem.get(&inv) {
+    while let Some(m) = mem.get_inventory(inv) {
         if m.bought == usize::MAX {
             break;
         }
@@ -241,7 +311,7 @@ impl PartialOrd for Node {
 
 fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> SolveResult {
     let data = GameData::new(goal);
-    let mut mem = MemoTable::new(data.max_inventory);
+    let mut mem = MemoTable::new();
     let mut q = BinaryHeap::new();
     let s0 = data.initial_state();
     let s0_finish = finish_time(&s0, goal);
@@ -257,10 +327,7 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
     });
 
     observer.start(root_id, s0_finish);
-    mem.insert(
-        s0.inventory,
-        MemoEntry { time: 0, money: 0., bought: usize::MAX, node_id: root_id },
-    );
+    mem.insert_state(&s0, MemoEntry { time: 0, money: 0., bought: usize::MAX, node_id: root_id });
     q.push(Node { priority: s0.time, state: s0, id: root_id });
 
     let mut best_time = s0_finish;
@@ -283,9 +350,9 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
             continue;
         }
 
-        if let Some(m) = mem.get(&s.inventory) {
+        if let Some(m) = mem.get_state(&s) {
             if id != m.node_id && (s.time > m.time || (s.time == m.time && s.money < m.money)) {
-                observer.prune(id, iter, "lazy_deleted_dominated_inventory");
+                observer.prune(id, iter, "lazy_deleted_dominated_state");
                 continue;
             }
         }
@@ -303,56 +370,62 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
             }
         }
 
-        for i in 0..NUM_RES {
-            if next_buy_is_order_dominated(i, &costs, &waits, &deltas) {
-                observer.reject_buy(id, iter, i, "next_buy_order_dominated");
+        for action in available_actions(&data, &s) {
+            let Some(resource_i) = action_resource_index(action) else {
+                continue;
+            };
+            if next_buy_is_order_dominated(resource_i, &costs, &waits, &deltas) {
+                observer.reject_buy(id, iter, resource_i, "next_buy_order_dominated");
                 continue;
             }
 
-            let Some(buy) = buy_next(&data, &s, i, goal, costs[i], waits[i]) else {
-                observer.reject_buy(id, iter, i, "cannot_buy_before_current_finish");
+            let Some(result) = apply_action(&data, &s, action, goal, &costs, &waits) else {
+                observer.reject_buy(id, iter, resource_i, "cannot_buy_before_current_finish");
                 continue;
             };
 
-            if buy.finish_time >= current_finish {
-                observer.reject_buy(id, iter, i, "does_not_improve_parent_finish");
+            if result.finish_time >= current_finish {
+                observer.reject_buy(id, iter, resource_i, "does_not_improve_parent_finish");
                 continue;
             }
 
-            if buy.state.time >= best_time {
-                observer.reject_buy(id, iter, i, "buy_time_after_best");
+            if result.state.time >= best_time {
+                observer.reject_buy(id, iter, resource_i, "buy_time_after_best");
                 continue;
             }
 
-            if !mem.is_better(&buy.state.inventory, buy.state.time, buy.state.money) {
-                observer.reject_buy(id, iter, i, "dominated_inventory");
+            if !mem.is_better_state(&result.state) {
+                observer.reject_buy(id, iter, resource_i, "dominated_state");
                 continue;
             }
+            let bought_resource = match result.action {
+                Action::BuyResource(i) => i,
+            };
 
             let child_id = observer.accept_node(AcceptedNode {
                 parent: Some(id),
-                bought: Some(i),
+                bought: Some(bought_resource),
                 iter_created: iter,
-                state: buy.state,
-                finish_time: buy.finish_time,
-                wait: Some(buy.wait),
-                cost_paid: Some(buy.cost_paid),
+                state: result.state,
+                finish_time: result.finish_time,
+                wait: Some(result.wait),
+                cost_paid: Some(result.cost_paid),
             });
 
-            observer.accept_buy(child_id, id, iter, i, buy.finish_time);
-            mem.insert(
-                buy.state.inventory,
+            observer.accept_buy(child_id, id, iter, bought_resource, result.finish_time);
+            mem.insert_state(
+                &result.state,
                 MemoEntry {
-                    time: buy.state.time,
-                    money: buy.state.money,
-                    bought: i,
+                    time: result.state.time,
+                    money: result.state.money,
+                    bought: bought_resource,
                     node_id: child_id,
                 },
             );
 
-            if buy.finish_time < best_time {
-                best_time = buy.finish_time;
-                best_game = buy.state;
+            if result.finish_time < best_time {
+                best_time = result.finish_time;
+                best_game = result.state;
                 best_node_id = child_id;
 
                 observer.best(child_id, iter, best_time);
@@ -361,7 +434,7 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
                 }
             }
 
-            q.push(Node { priority: buy.state.time, state: buy.state, id: child_id });
+            q.push(Node { priority: result.state.time, state: result.state, id: child_id });
         }
     }
 
