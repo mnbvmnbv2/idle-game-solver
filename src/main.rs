@@ -1,4 +1,5 @@
 mod tracing;
+use rustc_hash::FxHashMap;
 
 use std::{cmp::Ordering, collections::BinaryHeap, env, time::Instant};
 
@@ -59,7 +60,8 @@ struct GameData {
 
 impl GameData {
     fn new(goal: f64) -> Self {
-        let mut max_inventory = [1, 0, 0];
+        let mut max_inventory = [0; NUM_RES];
+        max_inventory[0] = 1;
         let (mut cost, mut yield_, mut delta) = (Vec::new(), Vec::new(), Vec::new());
 
         for (i, res) in RESOURCES.iter().enumerate() {
@@ -96,7 +98,8 @@ impl GameData {
         inv.iter().enumerate().map(|(i, &q)| self.yield_[i][q as usize]).sum()
     }
     fn initial_state(&self) -> GameState {
-        let inventory = [1, 0, 0];
+        let mut inventory = [0; NUM_RES];
+        inventory[0] = 1;
         GameState { time: 0, money: 0., inventory, income: self.income(&inventory) }
     }
 }
@@ -117,32 +120,28 @@ impl MemoEntry {
 }
 #[derive(Debug)]
 struct MemoTable {
-    dims: [usize; NUM_RES],
-    data: Vec<MemoEntry>,
+    data: FxHashMap<Inv, MemoEntry>,
 }
+
 impl MemoTable {
-    fn new(max: Inv) -> Self {
-        let dims = [max[0] as usize + 1, max[1] as usize + 1, max[2] as usize + 1];
-        Self { dims, data: vec![MemoEntry::EMPTY; dims.iter().product()] }
-    }
-    #[inline]
-    fn idx(&self, inv: &Inv) -> usize {
-        (inv[0] as usize * self.dims[1] + inv[1] as usize) * self.dims[2] + inv[2] as usize
+    fn new(_max_inventory: Inv) -> Self {
+        Self { data: FxHashMap::default() }
     }
     #[inline]
     fn get(&self, inv: &Inv) -> Option<MemoEntry> {
-        let m = self.data[self.idx(inv)];
-        (!m.is_empty()).then_some(m)
+        self.data.get(inv).copied()
     }
     #[inline]
     fn insert(&mut self, inv: Inv, entry: MemoEntry) {
-        let idx = self.idx(&inv);
-        self.data[idx] = entry;
+        self.data.insert(inv, entry);
     }
     #[inline]
     fn is_better(&self, inv: &Inv, time: i64, money: f64) -> bool {
-        let m = self.data[self.idx(inv)];
-        m.is_empty() || time < m.time || (time == m.time && money > m.money)
+        if let Some(m) = self.data.get(inv) {
+            time < m.time || (time == m.time && money > m.money)
+        } else {
+            true
+        }
     }
 }
 
@@ -203,7 +202,10 @@ fn next_buy_is_order_dominated(
 
 fn reconstruct_path(mem: &MemoTable, mut inv: Inv) -> Vec<String> {
     let mut log = Vec::new();
-    while let Some(m) = mem.get(&inv).filter(|m| m.bought != usize::MAX) {
+    while let Some(m) = mem.get(&inv) {
+        if m.bought == usize::MAX {
+            break;
+        }
         log.push(format!(
             "At time {}, bought {}, inventory {:?}",
             m.time, RESOURCES[m.bought].name, inv
