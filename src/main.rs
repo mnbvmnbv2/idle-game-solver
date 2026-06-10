@@ -9,6 +9,7 @@ const DEFAULT_GOAL: f64 = 1e12;
 const NUM_RES: usize = 3;
 const MAX_NODES: usize = 10_000_000;
 const VERBOSE: bool = false;
+const PRINT_BOUNDS: bool = true;
 
 #[rustfmt::skip]
 pub struct Resource {
@@ -19,9 +20,21 @@ pub struct Resource {
 
 #[rustfmt::skip]
 pub const RESOURCES: [Resource; NUM_RES] = [
-    Resource {name: "Clicker",cost_fn: |q| 10. * 1.1_f64.powi(q),yield_fn: |q| 2. * q as f64},
-    Resource {name: "Factory",cost_fn: |q| 100. * 1.2_f64.powi(q),yield_fn: |q| if q >= 5 { 30. * q as f64 } else { 10. * q as f64 }},
-    Resource {name: "Depot",cost_fn: |q| 1000. * 1.3_f64.powi(q),yield_fn: |q| 210. * q as f64},
+    Resource {
+        name: "Clicker",
+        cost_fn: |q| 10. * 1.1_f64.powi(q),
+        yield_fn: |q| 2. * q as f64,
+    },
+    Resource {
+        name: "Factory",
+        cost_fn: |q| 100. * 1.2_f64.powi(q),
+        yield_fn: |q| if q >= 5 { 30. * q as f64 } else { 10. * q as f64 },
+    },
+    Resource {
+        name: "Depot",
+        cost_fn: |q| 1000. * 1.3_f64.powi(q),
+        yield_fn: |q| 210. * q as f64,
+    },
 ];
 
 pub type Inv = [i32; NUM_RES];
@@ -55,6 +68,72 @@ struct BuyResult {
     finish_time: i64,
     wait: i64,
     cost_paid: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SearchBounds {
+    max_inventory: Inv,
+    max_income: f64,
+}
+
+impl SearchBounds {
+    fn new(goal: f64) -> Self {
+        let start = GameState::new();
+        let mut max_inventory = start.inventory;
+
+        for i in 0..NUM_RES {
+            let mut q = max_inventory[i];
+
+            // cost_fn(q) is the cost of buying the next item when currently owning q.
+            //
+            // Once this cost reaches the goal, waiting to afford that buy can never be
+            // better than simply waiting until the goal.
+            while (RESOURCES[i].cost_fn)(q) < goal {
+                q += 1;
+
+                // Safety guard for weird future cost functions.
+                if q > 1_000_000 {
+                    panic!(
+                        "Resource {} appears to have no finite cap below goal {}",
+                        RESOURCES[i].name, goal
+                    );
+                }
+            }
+
+            max_inventory[i] = q;
+        }
+
+        // Do not assume yield functions are monotonic.
+        // Take the best possible yield for each resource up to its useful cap.
+        let mut max_income = 0.;
+
+        for i in 0..NUM_RES {
+            let mut best_yield = f64::NEG_INFINITY;
+
+            for q in 0..=max_inventory[i] {
+                best_yield = best_yield.max((RESOURCES[i].yield_fn)(q));
+            }
+
+            max_income += best_yield;
+        }
+
+        Self { max_inventory, max_income }
+    }
+
+    fn optimistic_finish_time(&self, s: &GameState, goal: f64) -> i64 {
+        if s.money >= goal {
+            s.time
+        } else if self.max_income <= 0. {
+            i64::MAX
+        } else {
+            let remaining = goal - s.money;
+            s.time.saturating_add((remaining / self.max_income).ceil() as i64)
+        }
+    }
+
+    fn can_buy_more(&self, s: &GameState, i: usize) -> bool {
+        s.inventory[i] < self.max_inventory[i]
+    }
 }
 
 fn inc(inv: &Inv) -> f64 {
@@ -136,7 +215,17 @@ impl PartialOrd for Node {
 }
 
 fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> SolveResult {
-    let mut mem = HashMap::with_capacity_and_hasher(100_000, Default::default());
+    let bounds = SearchBounds::new(goal);
+
+    if PRINT_BOUNDS {
+        println!(
+            "Search bounds: max_inventory={:?}, theoretical_max_income={}",
+            bounds.max_inventory, bounds.max_income
+        );
+    }
+
+    let mut mem: HashMap<Inv, (i64, f64, usize, usize)> =
+        HashMap::with_capacity_and_hasher(100_000, Default::default());
 
     let mut q = BinaryHeap::new();
 
@@ -188,7 +277,20 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
             }
         }
 
+        // Optimistic global income bound:
+        // Even with fantasy access to the theoretical maximum useful income,
+        // can this state beat the current best?
+        if bounds.optimistic_finish_time(&s, goal) >= best_time {
+            observer.prune(id, iter, "optimistic_income_bound_cannot_beat_best");
+            continue;
+        }
+
         for i in 0..NUM_RES {
+            if !bounds.can_buy_more(&s, i) {
+                observer.reject_buy(id, iter, i, "resource_inventory_cap_reached");
+                continue;
+            }
+
             let Some(buy) = buy_next(&s, i, goal) else {
                 observer.reject_buy(id, iter, i, "cannot_buy_before_current_finish");
                 continue;
@@ -201,6 +303,11 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
 
             if buy.state.time >= best_time {
                 observer.reject_buy(id, iter, i, "buy_time_after_best");
+                continue;
+            }
+
+            if bounds.optimistic_finish_time(&buy.state, goal) >= best_time {
+                observer.reject_buy(id, iter, i, "child_optimistic_income_bound_cannot_beat_best");
                 continue;
             }
 
