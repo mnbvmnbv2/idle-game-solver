@@ -18,21 +18,9 @@ pub struct Resource {
 
 #[rustfmt::skip]
 pub const RESOURCES: [Resource; NUM_RES] = [
-    Resource {
-        name: "Clicker",
-        cost_fn: |q| 10. * 1.1_f64.powi(q),
-        yield_fn: |q| 2. * q as f64,
-    },
-    Resource {
-        name: "Factory",
-        cost_fn: |q| 100. * 1.2_f64.powi(q),
-        yield_fn: |q| if q >= 5 { 30. * q as f64 } else { 10. * q as f64 },
-    },
-    Resource {
-        name: "Depot",
-        cost_fn: |q| 1000. * 1.3_f64.powi(q),
-        yield_fn: |q| 210. * q as f64,
-    },
+    Resource { name: "Clicker", cost_fn: |q| 10. * 1.1_f64.powi(q), yield_fn: |q| 2. * q as f64 },
+    Resource { name: "Factory", cost_fn: |q| 100. * 1.2_f64.powi(q), yield_fn: |q| if q >= 5 { 30. * q as f64 } else { 10. * q as f64 } },
+    Resource { name: "Depot", cost_fn: |q| 1000. * 1.3_f64.powi(q), yield_fn: |q| 210. * q as f64 },
 ];
 
 pub type Inv = [i32; NUM_RES];
@@ -71,39 +59,18 @@ struct GameData {
 
 impl GameData {
     fn new(goal: f64) -> Self {
-        let start_inventory = [1, 0, 0];
-        let mut max_inventory = start_inventory;
+        let mut max_inventory = [1, 0, 0];
+        let (mut cost, mut yield_, mut delta) = (Vec::new(), Vec::new(), Vec::new());
 
-        for i in 0..NUM_RES {
-            let mut q = max_inventory[i];
-            while (RESOURCES[i].cost_fn)(q) < goal {
-                q += 1;
-                if q > 1_000_000 {
-                    panic!(
-                        "Resource {} appears to have no finite cap below goal {}",
-                        RESOURCES[i].name, goal
-                    );
-                }
+        for (i, res) in RESOURCES.iter().enumerate() {
+            while (res.cost_fn)(max_inventory[i]) < goal {
+                max_inventory[i] += 1;
+                assert!(max_inventory[i] <= 1_000_000, "Resource {} has no cap", res.name);
             }
-            max_inventory[i] = q;
-        }
-        let mut cost = Vec::with_capacity(NUM_RES);
-        let mut yield_ = Vec::with_capacity(NUM_RES);
-        let mut delta = Vec::with_capacity(NUM_RES);
-        for i in 0..NUM_RES {
-            let max_q = max_inventory[i] as usize;
-            let mut ys = Vec::with_capacity(max_q + 2);
-            for q in 0..=(max_q + 1) {
-                ys.push((RESOURCES[i].yield_fn)(q as i32));
-            }
-
-            let mut cs = Vec::with_capacity(max_q + 1);
-            let mut ds = Vec::with_capacity(max_q + 1);
-
-            for q in 0..=max_q {
-                cs.push((RESOURCES[i].cost_fn)(q as i32));
-                ds.push(ys[q + 1] - ys[q]);
-            }
+            let max_q = max_inventory[i];
+            let ys: Vec<f64> = (0..=max_q + 1).map(|q| (res.yield_fn)(q)).collect();
+            let cs: Vec<f64> = (0..=max_q).map(|q| (res.cost_fn)(q)).collect();
+            let ds: Vec<f64> = (0..=max_q).map(|q| ys[q as usize + 1] - ys[q as usize]).collect();
 
             cost.push(cs);
             yield_.push(ys);
@@ -154,21 +121,13 @@ struct MemoTable {
     data: Vec<MemoEntry>,
 }
 impl MemoTable {
-    fn new(max_inventory: Inv) -> Self {
-        let dims = [
-            max_inventory[0] as usize + 1,
-            max_inventory[1] as usize + 1,
-            max_inventory[2] as usize + 1,
-        ];
-        let len: usize = dims.iter().product();
-        Self { dims, data: vec![MemoEntry::EMPTY; len] }
+    fn new(max: Inv) -> Self {
+        let dims = [max[0] as usize + 1, max[1] as usize + 1, max[2] as usize + 1];
+        Self { dims, data: vec![MemoEntry::EMPTY; dims.iter().product()] }
     }
     #[inline]
     fn idx(&self, inv: &Inv) -> usize {
-        let a = inv[0] as usize;
-        let b = inv[1] as usize;
-        let c = inv[2] as usize;
-        (a * self.dims[1] + b) * self.dims[2] + c
+        (inv[0] as usize * self.dims[1] + inv[1] as usize) * self.dims[2] + inv[2] as usize
     }
     #[inline]
     fn get(&self, inv: &Inv) -> Option<MemoEntry> {
@@ -218,14 +177,11 @@ fn buy_next(
     if wait == i64::MAX || s.time + wait >= finish_time(s, goal) {
         return None;
     }
-
-    let q = s.inventory[i];
     let mut ns = step(s, wait);
     ns.money -= c;
     ns.inventory[i] += 1;
-    ns.income += data.delta(i, q);
-
-    Some(BuyResult { state: ns, finish_time: finish_time(&ns, goal), wait, cost_paid: c })
+    ns.income += data.delta(i, s.inventory[i]);
+    Some(BuyResult { finish_time: finish_time(&ns, goal), state: ns, wait, cost_paid: c })
 }
 
 #[inline]
@@ -235,32 +191,19 @@ fn next_buy_is_order_dominated(
     waits: &[i64; NUM_RES],
     deltas: &[f64; NUM_RES],
 ) -> bool {
-    let wait_candidate = waits[candidate];
-    if wait_candidate == i64::MAX {
-        return false;
-    }
-    for first in 0..NUM_RES {
-        if first == candidate {
-            continue;
-        }
-        let wait_first = waits[first];
-        if wait_first == i64::MAX || wait_first > wait_candidate || deltas[first] <= 0. {
-            continue;
-        }
-        let repay_window = wait_candidate - wait_first;
-        if deltas[first] * repay_window as f64 + 1e-9 >= costs[first] {
-            return true;
-        }
-    }
-    false
+    let wait_c = waits[candidate];
+    wait_c != i64::MAX
+        && (0..NUM_RES).any(|first| {
+            first != candidate
+                && waits[first] < wait_c
+                && deltas[first] > 0.
+                && deltas[first] * (wait_c - waits[first]) as f64 + 1e-9 >= costs[first]
+        })
 }
 
 fn reconstruct_path(mem: &MemoTable, mut inv: Inv) -> Vec<String> {
     let mut log = Vec::new();
-    while let Some(m) = mem.get(&inv) {
-        if m.bought == usize::MAX {
-            break;
-        }
+    while let Some(m) = mem.get(&inv).filter(|m| m.bought != usize::MAX) {
         log.push(format!(
             "At time {}, bought {}, inventory {:?}",
             m.time, RESOURCES[m.bought].name, inv
@@ -296,7 +239,6 @@ impl PartialOrd for Node {
 
 fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> SolveResult {
     let data = GameData::new(goal);
-
     let mut mem = MemoTable::new(data.max_inventory);
     let mut q = BinaryHeap::new();
     let s0 = data.initial_state();
@@ -347,17 +289,15 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
         }
 
         let current_finish = finish_time(&s, goal);
-
         let mut costs = [0.0; NUM_RES];
         let mut waits = [i64::MAX; NUM_RES];
         let mut deltas = [0.0; NUM_RES];
 
         for i in 0..NUM_RES {
             if data.can_buy_more(&s.inventory, i) {
-                let q_i = s.inventory[i];
-                costs[i] = data.cost(i, q_i);
+                costs[i] = data.cost(i, s.inventory[i]);
                 waits[i] = time_to_money(&s, costs[i]);
-                deltas[i] = data.delta(i, q_i);
+                deltas[i] = data.delta(i, s.inventory[i]);
             }
         }
 
@@ -398,7 +338,6 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
             });
 
             observer.accept_buy(child_id, id, iter, i, buy.finish_time);
-
             mem.insert(
                 buy.state.inventory,
                 MemoEntry {
@@ -415,7 +354,6 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
                 best_node_id = child_id;
 
                 observer.best(child_id, iter, best_time);
-
                 if verbose {
                     println!("Iter {iter}: New Best Time Found: {best_time}");
                 }
@@ -433,7 +371,6 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
     }
 
     let final_state = step(&best_game, time_to_money(&best_game, goal));
-
     observer.finish(best_node_id);
 
     SolveResult {
@@ -446,9 +383,7 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-
     let goal = args.get(1).and_then(|s| s.parse::<f64>().ok()).unwrap_or(DEFAULT_GOAL);
-
     let trace_path = args.get(2).map(String::as_str);
 
     let start = Instant::now();
@@ -456,9 +391,7 @@ fn main() {
     if let Some(path) = trace_path {
         let mut trace = JsonTrace::new();
         let result = search(goal, VERBOSE, &mut trace);
-
-        println!("Time elapsed: {:?}", start.elapsed());
-        println!("{result:?}");
+        println!("Time elapsed: {:?}\n{result:?}", start.elapsed());
 
         match trace.write(path, goal, &result) {
             Ok(()) => println!("Wrote trace to {path}"),
@@ -467,8 +400,6 @@ fn main() {
     } else {
         let mut trace = NullTrace::default();
         let result = search(goal, VERBOSE, &mut trace);
-
-        println!("Time elapsed: {:?}", start.elapsed());
-        println!("{result:?}");
+        println!("Time elapsed: {:?}\n{result:?}", start.elapsed());
     }
 }
