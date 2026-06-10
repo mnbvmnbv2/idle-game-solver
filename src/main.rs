@@ -69,16 +69,9 @@ struct BuyResult {
     cost_paid: f64,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 struct SearchBounds {
     max_inventory: Inv,
-    max_income: f64,
-    purchases: Vec<Vec<PurchaseInfo>>,
-}
-#[derive(Clone, Copy, Debug)]
-struct PurchaseInfo {
-    cost: f64,
-    delta_income: f64,
 }
 
 impl SearchBounds {
@@ -88,10 +81,10 @@ impl SearchBounds {
 
         for i in 0..NUM_RES {
             let mut q = max_inventory[i];
-
+            // cost_fn(q) is the cost of buying one more when currently owning q.
+            // If cost >= goal, waiting for this buy can never beat just waiting for goal.
             while (RESOURCES[i].cost_fn)(q) < goal {
                 q += 1;
-
                 if q > 1_000_000 {
                     panic!(
                         "Resource {} appears to have no finite cap below goal {}",
@@ -99,111 +92,12 @@ impl SearchBounds {
                     );
                 }
             }
-
             max_inventory[i] = q;
         }
-
-        let mut max_income = 0.;
-
-        for i in 0..NUM_RES {
-            let mut best_yield = f64::NEG_INFINITY;
-
-            for q in 0..=max_inventory[i] {
-                best_yield = best_yield.max((RESOURCES[i].yield_fn)(q));
-            }
-
-            max_income += best_yield;
-        }
-
-        let mut purchases = Vec::with_capacity(NUM_RES);
-
-        for i in 0..NUM_RES {
-            let mut resource_purchases = Vec::new();
-
-            for q in 0..max_inventory[i] {
-                let y0 = (RESOURCES[i].yield_fn)(q);
-                let y1 = (RESOURCES[i].yield_fn)(q + 1);
-
-                resource_purchases
-                    .push(PurchaseInfo { cost: (RESOURCES[i].cost_fn)(q), delta_income: y1 - y0 });
-            }
-
-            purchases.push(resource_purchases);
-        }
-
-        Self { max_inventory, max_income, purchases }
+        Self { max_inventory }
     }
-
     fn can_buy_more(&self, s: &GameState, i: usize) -> bool {
         s.inventory[i] < self.max_inventory[i]
-    }
-
-    fn deadline_upper_money(&self, s: &GameState, deadline: i64) -> f64 {
-        if deadline <= s.time {
-            return s.money;
-        }
-
-        let t = (deadline - s.time) as f64;
-
-        let mut upper = s.money + s.income * t;
-
-        for i in 0..NUM_RES {
-            let start = s.inventory[i] as usize;
-            let end = self.max_inventory[i] as usize;
-
-            for p in &self.purchases[i][start..end] {
-                if p.delta_income <= 0. {
-                    continue;
-                }
-
-                let optimistic_net = p.delta_income * t - p.cost;
-
-                if optimistic_net > 0. {
-                    upper += optimistic_net;
-                }
-            }
-        }
-
-        upper
-    }
-
-    fn can_still_beat_best(&self, s: &GameState, goal: f64, best_time: i64) -> bool {
-        if s.time >= best_time {
-            return false;
-        }
-
-        // To improve the incumbent, we need to reach the goal strictly before best_time.
-        let deadline = best_time - 1;
-
-        // Small epsilon to avoid unsafe pruning from floating point roundoff.
-        self.deadline_upper_money(s, deadline) + 1e-7 >= goal
-    }
-}
-
-fn greedy_upper_bound(goal: f64, bounds: &SearchBounds) -> (i64, GameState) {
-    let mut s = GameState::new();
-    loop {
-        let current_finish = finish_time(&s, goal);
-        let mut best_buy: Option<BuyResult> = None;
-        for i in 0..NUM_RES {
-            if !bounds.can_buy_more(&s, i) {
-                continue;
-            }
-            let Some(buy) = buy_next(&s, i, goal) else {
-                continue;
-            };
-            if buy.finish_time >= current_finish {
-                continue;
-            }
-            let is_best = best_buy.as_ref().map_or(true, |b| buy.finish_time < b.finish_time);
-            if is_best {
-                best_buy = Some(buy);
-            }
-        }
-        let Some(buy) = best_buy else {
-            return (current_finish, s);
-        };
-        s = buy.state;
     }
 }
 
@@ -213,10 +107,12 @@ fn inc(inv: &Inv) -> f64 {
 fn cost(i: usize, inv: &Inv) -> f64 {
     (RESOURCES[i].cost_fn)(inv[i])
 }
+fn delta_income(i: usize, q: i32) -> f64 {
+    (RESOURCES[i].yield_fn)(q + 1) - (RESOURCES[i].yield_fn)(q)
+}
 fn step(s: &GameState, t: i64) -> GameState {
     GameState { time: s.time + t, money: s.money + s.income * t as f64, ..*s }
 }
-
 fn time_to_money(s: &GameState, goal: f64) -> i64 {
     if s.money >= goal {
         0
@@ -226,97 +122,57 @@ fn time_to_money(s: &GameState, goal: f64) -> i64 {
         ((goal - s.money) / s.income).ceil() as i64
     }
 }
-
 fn finish_time(s: &GameState, goal: f64) -> i64 {
     s.time.saturating_add(time_to_money(s, goal))
 }
 
-fn buy_next(s: &GameState, i: usize, goal: f64) -> Option<BuyResult> {
-    let c = cost(i, &s.inventory);
-    let wait = time_to_money(s, c);
-
+fn buy_next_known(s: &GameState, i: usize, goal: f64, c: f64, wait: i64) -> Option<BuyResult> {
     if wait == i64::MAX || s.time + wait >= finish_time(s, goal) {
         return None;
     }
 
     let mut ns = step(s, wait);
-    ns.money -= cost(i, &ns.inventory);
+    ns.money -= c;
     ns.inventory[i] += 1;
     ns.income = inc(&ns.inventory);
 
     Some(BuyResult { state: ns, finish_time: finish_time(&ns, goal), wait, cost_paid: c })
 }
 
-fn buy_first_dominates_second(s: &GameState, first: usize, second: usize) -> bool {
-    if first == second {
+// Safe local ordering dominance.
+// Candidate B is dominated if there exists A such that:
+// - A can be bought no later than B.
+// - A pays back its cost before B would have been bought.
+fn next_buy_is_order_dominated(
+    candidate: usize,
+    costs: &[f64; NUM_RES],
+    waits: &[i64; NUM_RES],
+    deltas: &[f64; NUM_RES],
+) -> bool {
+    let wait_candidate = waits[candidate];
+    if wait_candidate == i64::MAX {
         return false;
     }
-
-    let first_cost = cost(first, &s.inventory);
-    let second_cost = cost(second, &s.inventory);
-
-    let wait_first = time_to_money(s, first_cost);
-    let wait_second = time_to_money(s, second_cost);
-
-    if wait_first == i64::MAX || wait_second == i64::MAX {
-        return false;
-    }
-
-    // If first cannot be bought no later than second, it cannot dominate second-first.
-    if wait_first > wait_second {
-        return false;
-    }
-
-    let first_delta_income = (RESOURCES[first].yield_fn)(s.inventory[first] + 1)
-        - (RESOURCES[first].yield_fn)(s.inventory[first]);
-
-    if first_delta_income <= 0. {
-        return false;
-    }
-
-    // State after buying second directly.
-    let mut second_only = step(s, wait_second);
-    second_only.money -= second_cost;
-    second_only.inventory[second] += 1;
-    second_only.income = inc(&second_only.inventory);
-
-    // State after buying first.
-    let mut first_then = step(s, wait_first);
-    first_then.money -= first_cost;
-    first_then.inventory[first] += 1;
-    first_then.income = inc(&first_then.inventory);
-
-    // Advance first-then branch to the exact time second-only bought second.
-    let extra_wait = wait_second - wait_first;
-    first_then = step(&first_then, extra_wait);
-
-    // Since first != second and costs only depend on current quantity of that resource,
-    // second's cost is unchanged by buying first.
-    let second_cost_after_first = cost(second, &first_then.inventory);
-
-    if first_then.money < second_cost_after_first {
-        return false;
-    }
-
-    first_then.money -= second_cost_after_first;
-    first_then.inventory[second] += 1;
-    first_then.income = inc(&first_then.inventory);
-
-    // Now both branches are at the same time and both have bought second.
-    // The first-then branch also owns one extra `first`.
-    //
-    // If it has at least as much money, it dominates second-only.
-    first_then.money + 1e-9 >= second_only.money
-}
-
-fn next_buy_is_order_dominated(s: &GameState, candidate: usize) -> Option<usize> {
     for first in 0..NUM_RES {
-        if buy_first_dominates_second(s, first, candidate) {
-            return Some(first);
+        if first == candidate {
+            continue;
+        }
+        let wait_first = waits[first];
+        if wait_first == i64::MAX {
+            continue;
+        }
+        if wait_first > wait_candidate {
+            continue;
+        }
+        if deltas[first] <= 0. {
+            continue;
+        }
+        let repay_window = wait_candidate - wait_first;
+        if deltas[first] * repay_window as f64 + 1e-9 >= costs[first] {
+            return true;
         }
     }
-
-    None
+    false
 }
 
 fn reconstruct_path(mem: &HashMap<Inv, (i64, f64, usize, usize)>, mut inv: Inv) -> Vec<String> {
@@ -338,7 +194,6 @@ struct Node {
     state: GameState,
     id: usize,
 }
-
 impl PartialEq for Node {
     fn eq(&self, other: &Self) -> bool {
         self.priority == other.priority
@@ -359,13 +214,10 @@ impl PartialOrd for Node {
 
 fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> SolveResult {
     let bounds = SearchBounds::new(goal);
-    let (greedy_best_time, greedy_best_game) = greedy_upper_bound(goal, &bounds);
 
-    let mut mem: HashMap<Inv, (i64, f64, usize, usize)> =
-        HashMap::with_capacity_and_hasher(100_000, Default::default());
+    let mut mem = HashMap::with_capacity_and_hasher(100_000, Default::default());
 
     let mut q = BinaryHeap::new();
-
     let s0 = GameState::new();
     let s0_finish = finish_time(&s0, goal);
 
@@ -380,13 +232,11 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
     });
 
     observer.start(root_id, s0_finish);
-
     mem.insert(s0.inventory, (0, 0., usize::MAX, root_id));
-
     q.push(Node { priority: s0.time, state: s0, id: root_id });
 
-    let mut best_time = greedy_best_time;
-    let mut best_game = greedy_best_game;
+    let mut best_time = s0_finish;
+    let mut best_game = s0;
     let mut best_node_id = root_id;
     let mut iter = 0;
 
@@ -406,7 +256,8 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
         }
 
         // Lazy deletion:
-        // If a faster path reached this inventory while this node waited in the queue, drop it.
+        // If a faster path reached this inventory while this node waited in the queue,
+        // drop this stale node.
         if let Some(&(mt, mm, _, best_mem_id)) = mem.get(&s.inventory) {
             if id != best_mem_id && (s.time > mt || (s.time == mt && s.money < mm)) {
                 observer.prune(id, iter, "lazy_deleted_dominated_inventory");
@@ -414,9 +265,19 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
             }
         }
 
-        if !bounds.can_still_beat_best(&s, goal, best_time) {
-            observer.prune(id, iter, "deadline_npv_bound_cannot_beat_best");
-            continue;
+        let current_finish = finish_time(&s, goal);
+
+        // Precompute cheap per-state facts once.
+        let mut costs = [0.0; NUM_RES];
+        let mut waits = [i64::MAX; NUM_RES];
+        let mut deltas = [0.0; NUM_RES];
+
+        for i in 0..NUM_RES {
+            if bounds.can_buy_more(&s, i) {
+                costs[i] = cost(i, &s.inventory);
+                waits[i] = time_to_money(&s, costs[i]);
+                deltas[i] = delta_income(i, s.inventory[i]);
+            }
         }
 
         for i in 0..NUM_RES {
@@ -425,17 +286,22 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
                 continue;
             }
 
-            if let Some(_dominating_first) = next_buy_is_order_dominated(&s, i) {
+            if deltas[i] <= 0. {
+                observer.reject_buy(id, iter, i, "non_positive_delta_income");
+                continue;
+            }
+
+            if next_buy_is_order_dominated(i, &costs, &waits, &deltas) {
                 observer.reject_buy(id, iter, i, "next_buy_order_dominated");
                 continue;
             }
 
-            let Some(buy) = buy_next(&s, i, goal) else {
+            let Some(buy) = buy_next_known(&s, i, goal, costs[i], waits[i]) else {
                 observer.reject_buy(id, iter, i, "cannot_buy_before_current_finish");
                 continue;
             };
 
-            if buy.finish_time >= finish_time(&s, goal) {
+            if buy.finish_time >= current_finish {
                 observer.reject_buy(id, iter, i, "does_not_improve_parent_finish");
                 continue;
             }
