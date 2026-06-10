@@ -247,6 +247,78 @@ fn buy_next(s: &GameState, i: usize, goal: f64) -> Option<BuyResult> {
     Some(BuyResult { state: ns, finish_time: finish_time(&ns, goal), wait, cost_paid: c })
 }
 
+fn buy_first_dominates_second(s: &GameState, first: usize, second: usize) -> bool {
+    if first == second {
+        return false;
+    }
+
+    let first_cost = cost(first, &s.inventory);
+    let second_cost = cost(second, &s.inventory);
+
+    let wait_first = time_to_money(s, first_cost);
+    let wait_second = time_to_money(s, second_cost);
+
+    if wait_first == i64::MAX || wait_second == i64::MAX {
+        return false;
+    }
+
+    // If first cannot be bought no later than second, it cannot dominate second-first.
+    if wait_first > wait_second {
+        return false;
+    }
+
+    let first_delta_income = (RESOURCES[first].yield_fn)(s.inventory[first] + 1)
+        - (RESOURCES[first].yield_fn)(s.inventory[first]);
+
+    if first_delta_income <= 0. {
+        return false;
+    }
+
+    // State after buying second directly.
+    let mut second_only = step(s, wait_second);
+    second_only.money -= second_cost;
+    second_only.inventory[second] += 1;
+    second_only.income = inc(&second_only.inventory);
+
+    // State after buying first.
+    let mut first_then = step(s, wait_first);
+    first_then.money -= first_cost;
+    first_then.inventory[first] += 1;
+    first_then.income = inc(&first_then.inventory);
+
+    // Advance first-then branch to the exact time second-only bought second.
+    let extra_wait = wait_second - wait_first;
+    first_then = step(&first_then, extra_wait);
+
+    // Since first != second and costs only depend on current quantity of that resource,
+    // second's cost is unchanged by buying first.
+    let second_cost_after_first = cost(second, &first_then.inventory);
+
+    if first_then.money < second_cost_after_first {
+        return false;
+    }
+
+    first_then.money -= second_cost_after_first;
+    first_then.inventory[second] += 1;
+    first_then.income = inc(&first_then.inventory);
+
+    // Now both branches are at the same time and both have bought second.
+    // The first-then branch also owns one extra `first`.
+    //
+    // If it has at least as much money, it dominates second-only.
+    first_then.money + 1e-9 >= second_only.money
+}
+
+fn next_buy_is_order_dominated(s: &GameState, candidate: usize) -> Option<usize> {
+    for first in 0..NUM_RES {
+        if buy_first_dominates_second(s, first, candidate) {
+            return Some(first);
+        }
+    }
+
+    None
+}
+
 fn reconstruct_path(mem: &HashMap<Inv, (i64, f64, usize, usize)>, mut inv: Inv) -> Vec<String> {
     let mut log = Vec::new();
     while let Some(&(t, _, bought, _node_id)) = mem.get(&inv) {
@@ -350,6 +422,11 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
         for i in 0..NUM_RES {
             if !bounds.can_buy_more(&s, i) {
                 observer.reject_buy(id, iter, i, "resource_inventory_cap_reached");
+                continue;
+            }
+
+            if let Some(_dominating_first) = next_buy_is_order_dominated(&s, i) {
+                observer.reject_buy(id, iter, i, "next_buy_order_dominated");
                 continue;
             }
 
