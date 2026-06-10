@@ -11,7 +11,6 @@
     :root {
       --bg: #070a12;
       --panel: rgba(17, 23, 38, 0.9);
-      --panel2: rgba(24, 33, 54, 0.9);
       --text: #edf2ff;
       --muted: #9aa9c7;
       --line: rgba(255,255,255,0.09);
@@ -353,7 +352,7 @@
   <header>
     <div>
       <h1>Idle Solver Fast Visualizer</h1>
-      <div class="subtitle">Canvas renderer, time-scaled layout, timeline replay, best path, and node inspector.</div>
+      <div class="subtitle">Canvas renderer, time/depth X, tree/income Y, timeline replay, best path, and node inspector.</div>
     </div>
 
     <div style="display:flex;gap:10px;align-items:center;">
@@ -407,10 +406,12 @@
       <input id="timeline" type="range" min="0" max="0" value="0" />
       <span class="pill" id="iterPill">iter 0</span>
       <span class="pill" id="eventPill">event 0 / 0</span>
-      <span class="pill" id="layoutPill">layout time</span>
+      <span class="pill" id="layoutPill">x time · y tree</span>
+
       <div class="controls">
         <button id="fitBtn">Fit</button>
-        <button id="layoutBtn" class="active">Time layout</button>
+        <button id="layoutBtn" class="active">Time X</button>
+        <button id="yLayoutBtn">Tree Y</button>
         <button id="bestBtn">Best path</button>
       </div>
     </div>
@@ -425,7 +426,9 @@ let childrenById = new Map();
 let eventIndex = 0;
 let selectedNodeId = null;
 let playTimer = null;
+
 let layoutMode = "time";
+let yMode = "tree";
 
 let transform = d3.zoomIdentity;
 
@@ -445,7 +448,6 @@ let state = {
 const css = getComputedStyle(document.documentElement);
 
 const colors = {
-  bg: "#070a12",
   node: css.getPropertyValue("--node").trim(),
   frontier: css.getPropertyValue("--frontier").trim(),
   current: css.getPropertyValue("--current").trim(),
@@ -455,6 +457,8 @@ const colors = {
   linkBest: css.getPropertyValue("--best").trim(),
   faint: "rgba(255,255,255,0.06)",
   selected: "#ffffff",
+  axis: "rgba(255,255,255,0.16)",
+  axisText: "rgba(237,242,255,0.62)",
 };
 
 const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
@@ -474,8 +478,10 @@ function formatInt(x) {
 function resizeCanvas() {
   const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
+
   canvas.width = Math.max(1, Math.floor(rect.width * dpr));
   canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   draw();
 }
@@ -556,8 +562,6 @@ function applyEvent(e) {
 function setEventIndex(next) {
   next = Math.max(0, Math.min(next, trace.events.length - 1));
 
-  // Cheap forward stepping during playback/slider drag.
-  // Full replay only when jumping backwards.
   if (next >= eventIndex && next - eventIndex < 2000) {
     for (let i = eventIndex + 1; i <= next; i++) {
       applyEvent(trace.events[i]);
@@ -591,9 +595,13 @@ function computeLayout() {
 
   const maxDepth = d3.max(trace.nodes, d => d.depth) || 1;
   const maxTime = d3.max(trace.nodes, d => d.time) || 1;
+  const maxIncome = d3.max(trace.nodes, d => d.income) || 1;
+  const minIncome = d3.min(trace.nodes, d => d.income) || 0;
 
   const depthWidth = 170;
   const timeWidth = Math.max(1400, maxDepth * depthWidth);
+
+  const incomeHeight = Math.max(900, maxDepth * 95);
 
   const depthBuckets = new Map();
 
@@ -612,12 +620,31 @@ function computeLayout() {
       const n = bucket[i];
 
       n.xDepth = depth * depthWidth;
+
+      // Sqrt time scale keeps early game readable.
+      // For true linear time, use: n.xTime = (n.time / maxTime) * timeWidth;
       n.xTime = Math.sqrt(n.time / maxTime) * timeWidth;
 
-      // The y layout is by depth bucket index. No recursive tree layout, so no call-stack problems.
-      n.y = i * gap - totalHeight / 2;
+      n.yTree = i * gap - totalHeight / 2;
+
+      // Higher income appears higher on screen.
+      // log1p keeps large income gaps readable.
+      const incomeNorm =
+        Math.log1p(n.income - minIncome) /
+        Math.max(1e-9, Math.log1p(maxIncome - minIncome));
+
+      n.yIncome = -incomeNorm * incomeHeight;
     }
   }
+
+  trace.layoutStats = {
+    maxDepth,
+    maxTime,
+    maxIncome,
+    minIncome,
+    timeWidth,
+    incomeHeight,
+  };
 
   applyLayoutMode();
 }
@@ -625,21 +652,25 @@ function computeLayout() {
 function applyLayoutMode() {
   for (const n of trace.nodes) {
     n.x = layoutMode === "time" ? n.xTime : n.xDepth;
+    n.y = yMode === "income" ? n.yIncome : n.yTree;
   }
 
   document.querySelector("#layoutPill").textContent =
-    layoutMode === "time" ? "layout time" : "layout depth";
+    `${layoutMode === "time" ? "x time" : "x depth"} · ${yMode === "income" ? "y income" : "y tree"}`;
 
   document.querySelector("#layoutBtn").textContent =
-    layoutMode === "time" ? "Time layout" : "Depth layout";
+    layoutMode === "time" ? "Time X" : "Depth X";
+
+  document.querySelector("#yLayoutBtn").textContent =
+    yMode === "income" ? "Income Y" : "Tree Y";
 
   document.querySelector("#layoutBtn").classList.toggle("active", layoutMode === "time");
+  document.querySelector("#yLayoutBtn").classList.toggle("active", yMode === "income");
 
   draw();
 }
 
 function nodeRadius(n) {
-  // Small and cheap. Scaling by income is useful, but not too dramatic.
   return 2.4 + Math.min(4.2, Math.log10(Math.max(1, n.income)) * 0.7);
 }
 
@@ -662,6 +693,34 @@ function isVisibleWorld(x, y, pad = 80) {
   return sx >= -pad && sx <= rect.width + pad && sy >= -pad && sy <= rect.height + pad;
 }
 
+function drawAxes() {
+  if (!trace || !trace.layoutStats) return;
+  if (layoutMode !== "time" && yMode !== "income") return;
+
+  const rect = canvas.getBoundingClientRect();
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = colors.axisText;
+  ctx.strokeStyle = colors.axis;
+  ctx.lineWidth = 1;
+  ctx.font = "12px " + getComputedStyle(document.body).fontFamily;
+
+  if (layoutMode === "time") {
+    ctx.fillText("x: game time, sqrt scaled", 18, rect.height - 18);
+  } else {
+    ctx.fillText("x: purchase depth", 18, rect.height - 18);
+  }
+
+  if (yMode === "income") {
+    ctx.fillText("y: income, log scaled", 18, rect.height - 36);
+  } else {
+    ctx.fillText("y: tree bucket layout", 18, rect.height - 36);
+  }
+
+  ctx.restore();
+}
+
 function draw() {
   if (!trace) return;
 
@@ -677,7 +736,7 @@ function draw() {
 
   const visibleLineWidth = 1 / transform.k;
 
-  // Links first.
+  // Normal links.
   ctx.lineWidth = Math.max(0.4, visibleLineWidth);
   ctx.strokeStyle = colors.link;
   ctx.beginPath();
@@ -690,7 +749,6 @@ function draw() {
     if (!p || !state.accepted[p.id]) continue;
 
     if (!isVisibleWorld(n.x, n.y) && !isVisibleWorld(p.x, p.y)) continue;
-
     if (state.best[n.id] && state.best[p.id]) continue;
 
     ctx.moveTo(p.x, p.y);
@@ -708,6 +766,7 @@ function draw() {
   for (let i = 1; i < path.length; i++) {
     const a = nodesById.get(path[i - 1]);
     const b = nodesById.get(path[i]);
+
     if (!a || !b) continue;
     if (!state.accepted[a.id] || !state.accepted[b.id]) continue;
     if (!isVisibleWorld(a.x, a.y) && !isVisibleWorld(b.x, b.y)) continue;
@@ -723,7 +782,9 @@ function draw() {
     if (!state.accepted[n.id]) continue;
     if (!isVisibleWorld(n.x, n.y, 40)) continue;
 
-    const r = selectedNodeId === n.id ? nodeRadius(n) + 3 / transform.k : nodeRadius(n);
+    const r = selectedNodeId === n.id
+      ? nodeRadius(n) + 3 / transform.k
+      : nodeRadius(n);
 
     ctx.beginPath();
     ctx.fillStyle = nodeColor(n);
@@ -738,13 +799,14 @@ function draw() {
   }
 
   ctx.restore();
+
+  drawAxes();
 }
 
 function fitView() {
   if (!trace || !trace.nodes.length) return;
 
   const visibleNodes = trace.nodes.filter(n => state.accepted[n.id]);
-
   const nodes = visibleNodes.length ? visibleNodes : trace.nodes;
 
   const minX = d3.min(nodes, d => d.x);
@@ -776,6 +838,7 @@ function centerNode(id) {
 
   const rect = canvas.getBoundingClientRect();
   const k = Math.max(transform.k, 1.8);
+
   const t = d3.zoomIdentity
     .translate(rect.width / 2 - n.x * k, rect.height / 2 - n.y * k)
     .scale(k);
@@ -788,6 +851,7 @@ function centerNode(id) {
 
 function screenToWorld(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
+
   const sx = clientX - rect.left;
   const sy = clientY - rect.top;
 
@@ -805,8 +869,6 @@ function pickNode(clientX, clientY) {
 
   const threshold = 12 / transform.k;
 
-  // Linear scan is okay for tens of thousands of accepted nodes.
-  // If you later trace millions, add a grid index.
   for (const n of trace.nodes) {
     if (!state.accepted[n.id]) continue;
     if (!isVisibleWorld(n.x, n.y, 40)) continue;
@@ -1039,8 +1101,15 @@ document.querySelector("#layoutBtn").addEventListener("click", () => {
   fitView();
 });
 
+document.querySelector("#yLayoutBtn").addEventListener("click", () => {
+  yMode = yMode === "tree" ? "income" : "tree";
+  applyLayoutMode();
+  fitView();
+});
+
 document.querySelector("#bestBtn").addEventListener("click", () => {
   const last = trace?.best_path_node_ids?.at(-1);
+
   if (last !== undefined) {
     selectNode(last);
     centerNode(last);
