@@ -9,7 +9,6 @@ const DEFAULT_GOAL: f64 = 1e12;
 const NUM_RES: usize = 3;
 const MAX_NODES: usize = 10_000_000;
 const VERBOSE: bool = false;
-const PRINT_BOUNDS: bool = true;
 
 #[rustfmt::skip]
 pub struct Resource {
@@ -70,10 +69,16 @@ struct BuyResult {
     cost_paid: f64,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 struct SearchBounds {
     max_inventory: Inv,
     max_income: f64,
+    purchases: Vec<Vec<PurchaseInfo>>,
+}
+#[derive(Clone, Copy, Debug)]
+struct PurchaseInfo {
+    cost: f64,
+    delta_income: f64,
 }
 
 impl SearchBounds {
@@ -84,14 +89,9 @@ impl SearchBounds {
         for i in 0..NUM_RES {
             let mut q = max_inventory[i];
 
-            // cost_fn(q) is the cost of buying the next item when currently owning q.
-            //
-            // Once this cost reaches the goal, waiting to afford that buy can never be
-            // better than simply waiting until the goal.
             while (RESOURCES[i].cost_fn)(q) < goal {
                 q += 1;
 
-                // Safety guard for weird future cost functions.
                 if q > 1_000_000 {
                     panic!(
                         "Resource {} appears to have no finite cap below goal {}",
@@ -103,8 +103,6 @@ impl SearchBounds {
             max_inventory[i] = q;
         }
 
-        // Do not assume yield functions are monotonic.
-        // Take the best possible yield for each resource up to its useful cap.
         let mut max_income = 0.;
 
         for i in 0..NUM_RES {
@@ -117,22 +115,95 @@ impl SearchBounds {
             max_income += best_yield;
         }
 
-        Self { max_inventory, max_income }
-    }
+        let mut purchases = Vec::with_capacity(NUM_RES);
 
-    fn optimistic_finish_time(&self, s: &GameState, goal: f64) -> i64 {
-        if s.money >= goal {
-            s.time
-        } else if self.max_income <= 0. {
-            i64::MAX
-        } else {
-            let remaining = goal - s.money;
-            s.time.saturating_add((remaining / self.max_income).ceil() as i64)
+        for i in 0..NUM_RES {
+            let mut resource_purchases = Vec::new();
+
+            for q in 0..max_inventory[i] {
+                let y0 = (RESOURCES[i].yield_fn)(q);
+                let y1 = (RESOURCES[i].yield_fn)(q + 1);
+
+                resource_purchases
+                    .push(PurchaseInfo { cost: (RESOURCES[i].cost_fn)(q), delta_income: y1 - y0 });
+            }
+
+            purchases.push(resource_purchases);
         }
+
+        Self { max_inventory, max_income, purchases }
     }
 
     fn can_buy_more(&self, s: &GameState, i: usize) -> bool {
         s.inventory[i] < self.max_inventory[i]
+    }
+
+    fn deadline_upper_money(&self, s: &GameState, deadline: i64) -> f64 {
+        if deadline <= s.time {
+            return s.money;
+        }
+
+        let t = (deadline - s.time) as f64;
+
+        let mut upper = s.money + s.income * t;
+
+        for i in 0..NUM_RES {
+            let start = s.inventory[i] as usize;
+            let end = self.max_inventory[i] as usize;
+
+            for p in &self.purchases[i][start..end] {
+                if p.delta_income <= 0. {
+                    continue;
+                }
+
+                let optimistic_net = p.delta_income * t - p.cost;
+
+                if optimistic_net > 0. {
+                    upper += optimistic_net;
+                }
+            }
+        }
+
+        upper
+    }
+
+    fn can_still_beat_best(&self, s: &GameState, goal: f64, best_time: i64) -> bool {
+        if s.time >= best_time {
+            return false;
+        }
+
+        // To improve the incumbent, we need to reach the goal strictly before best_time.
+        let deadline = best_time - 1;
+
+        // Small epsilon to avoid unsafe pruning from floating point roundoff.
+        self.deadline_upper_money(s, deadline) + 1e-7 >= goal
+    }
+}
+
+fn greedy_upper_bound(goal: f64, bounds: &SearchBounds) -> (i64, GameState) {
+    let mut s = GameState::new();
+    loop {
+        let current_finish = finish_time(&s, goal);
+        let mut best_buy: Option<BuyResult> = None;
+        for i in 0..NUM_RES {
+            if !bounds.can_buy_more(&s, i) {
+                continue;
+            }
+            let Some(buy) = buy_next(&s, i, goal) else {
+                continue;
+            };
+            if buy.finish_time >= current_finish {
+                continue;
+            }
+            let is_best = best_buy.as_ref().map_or(true, |b| buy.finish_time < b.finish_time);
+            if is_best {
+                best_buy = Some(buy);
+            }
+        }
+        let Some(buy) = best_buy else {
+            return (current_finish, s);
+        };
+        s = buy.state;
     }
 }
 
@@ -216,13 +287,7 @@ impl PartialOrd for Node {
 
 fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> SolveResult {
     let bounds = SearchBounds::new(goal);
-
-    if PRINT_BOUNDS {
-        println!(
-            "Search bounds: max_inventory={:?}, theoretical_max_income={}",
-            bounds.max_inventory, bounds.max_income
-        );
-    }
+    let (greedy_best_time, greedy_best_game) = greedy_upper_bound(goal, &bounds);
 
     let mut mem: HashMap<Inv, (i64, f64, usize, usize)> =
         HashMap::with_capacity_and_hasher(100_000, Default::default());
@@ -248,8 +313,8 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
 
     q.push(Node { priority: s0.time, state: s0, id: root_id });
 
-    let mut best_time = s0_finish;
-    let mut best_game = s0;
+    let mut best_time = greedy_best_time;
+    let mut best_game = greedy_best_game;
     let mut best_node_id = root_id;
     let mut iter = 0;
 
@@ -277,11 +342,8 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
             }
         }
 
-        // Optimistic global income bound:
-        // Even with fantasy access to the theoretical maximum useful income,
-        // can this state beat the current best?
-        if bounds.optimistic_finish_time(&s, goal) >= best_time {
-            observer.prune(id, iter, "optimistic_income_bound_cannot_beat_best");
+        if !bounds.can_still_beat_best(&s, goal, best_time) {
+            observer.prune(id, iter, "deadline_npv_bound_cannot_beat_best");
             continue;
         }
 
@@ -303,11 +365,6 @@ fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> Solv
 
             if buy.state.time >= best_time {
                 observer.reject_buy(id, iter, i, "buy_time_after_best");
-                continue;
-            }
-
-            if bounds.optimistic_finish_time(&buy.state, goal) >= best_time {
-                observer.reject_buy(id, iter, i, "child_optimistic_income_bound_cannot_beat_best");
                 continue;
             }
 
