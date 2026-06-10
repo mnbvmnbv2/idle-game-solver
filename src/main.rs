@@ -19,21 +19,9 @@ pub struct Resource {
 
 #[rustfmt::skip]
 pub const RESOURCES: [Resource; NUM_RES] = [
-    Resource {
-        name: "Clicker",
-        cost_fn: |q| 10. * 1.1_f64.powi(q),
-        yield_fn: |q| 2. * q as f64,
-    },
-    Resource {
-        name: "Factory",
-        cost_fn: |q| 100. * 1.2_f64.powi(q),
-        yield_fn: |q| if q >= 5 { 30. * q as f64 } else { 10. * q as f64 },
-    },
-    Resource {
-        name: "Depot",
-        cost_fn: |q| 1000. * 1.3_f64.powi(q),
-        yield_fn: |q| 210. * q as f64,
-    },
+    Resource {name: "Clicker",cost_fn: |q| 10. * 1.1_f64.powi(q),yield_fn: |q| 2. * q as f64},
+    Resource {name: "Factory",cost_fn: |q| 100. * 1.2_f64.powi(q),yield_fn: |q| if q >= 5 { 30. * q as f64 } else { 10. * q as f64 }},
+    Resource {name: "Depot",cost_fn: |q| 1000. * 1.3_f64.powi(q),yield_fn: |q| 210. * q as f64},
 ];
 
 pub type Inv = [i32; NUM_RES];
@@ -49,7 +37,6 @@ pub struct GameState {
 impl GameState {
     fn new() -> Self {
         let inventory = [1, 0, 0];
-
         Self { time: 0, money: 0., inventory, income: inc(&inventory) }
     }
 }
@@ -73,11 +60,9 @@ struct BuyResult {
 fn inc(inv: &Inv) -> f64 {
     inv.iter().enumerate().map(|(i, &q)| (RESOURCES[i].yield_fn)(q)).sum()
 }
-
 fn cost(i: usize, inv: &Inv) -> f64 {
     (RESOURCES[i].cost_fn)(inv[i])
 }
-
 fn step(s: &GameState, t: i64) -> GameState {
     GameState { time: s.time + t, money: s.money + s.income * t as f64, ..*s }
 }
@@ -114,17 +99,13 @@ fn buy_next(s: &GameState, i: usize, goal: f64) -> Option<BuyResult> {
 
 fn reconstruct_path(mem: &HashMap<Inv, (i64, f64, usize, usize)>, mut inv: Inv) -> Vec<String> {
     let mut log = Vec::new();
-
     while let Some(&(t, _, bought, _node_id)) = mem.get(&inv) {
         if bought == usize::MAX {
             break;
         }
-
         log.push(format!("At time {}, bought {}, inventory {:?}", t, RESOURCES[bought].name, inv));
-
         inv[bought] -= 1;
     }
-
     log.reverse();
     log
 }
@@ -141,16 +122,13 @@ impl PartialEq for Node {
         self.priority == other.priority
     }
 }
-
 impl Eq for Node {}
-
 impl Ord for Node {
     fn cmp(&self, other: &Self) -> Ordering {
         // Reverse ordering because BinaryHeap is a max-heap.
         other.priority.cmp(&self.priority)
     }
 }
-
 impl PartialOrd for Node {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -158,8 +136,7 @@ impl PartialOrd for Node {
 }
 
 fn search<O: SearchObserver>(goal: f64, verbose: bool, observer: &mut O) -> SolveResult {
-    let mut mem: HashMap<Inv, (i64, f64, usize, usize)> =
-        HashMap::with_capacity_and_hasher(100_000, Default::default());
+    let mut mem = HashMap::with_capacity_and_hasher(100_000, Default::default());
 
     let mut q = BinaryHeap::new();
 
