@@ -4,13 +4,16 @@ use std::{
     io::{BufWriter, Result as IoResult},
 };
 
-use crate::{GameState, Inv, SolveResult, RESOURCES};
+use crate::{
+    game::{GameRules, GameState, Inventory},
+    solver::SolveResult,
+};
 
 const TRACE_MAX_NODES: usize = 250_000;
 const TRACE_MAX_EVENTS: usize = 1_000_000;
 const TRACE_POP_STRIDE: usize = 25;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct AcceptedNode {
     pub parent: Option<usize>,
     pub bought: Option<usize>,
@@ -64,11 +67,12 @@ impl SearchObserver for NullTrace {
 
 #[derive(Serialize)]
 struct TraceResource {
-    name: &'static str,
+    name: String,
 }
 
 #[derive(Serialize)]
 struct TraceMeta {
+    game: String,
     goal: f64,
     trace_max_nodes: usize,
     trace_max_events: usize,
@@ -76,7 +80,7 @@ struct TraceMeta {
     iterations: usize,
     best_time: i64,
     final_money: f64,
-    final_inventory: Inv,
+    final_inventory: Inventory,
     truncated_nodes: bool,
     truncated_events: bool,
 }
@@ -86,13 +90,13 @@ struct TraceNode {
     id: usize,
     parent: Option<usize>,
     bought: Option<usize>,
-    bought_name: Option<&'static str>,
+    bought_name: Option<String>,
     depth: usize,
     iter_created: usize,
 
     time: i64,
     money: f64,
-    inventory: Inv,
+    inventory: Inventory,
     income: f64,
     finish_time: i64,
 
@@ -122,6 +126,9 @@ struct TraceFile {
 }
 
 pub struct JsonTrace {
+    game_name: String,
+    goal: f64,
+    resource_names: Vec<String>,
     next_id: usize,
     nodes: Vec<TraceNode>,
     events: Vec<TraceEvent>,
@@ -133,8 +140,11 @@ pub struct JsonTrace {
 }
 
 impl JsonTrace {
-    pub fn new() -> Self {
+    pub fn new(rules: &GameRules) -> Self {
         Self {
+            game_name: rules.name.clone(),
+            goal: rules.goal,
+            resource_names: rules.resources.iter().map(|r| r.name.clone()).collect(),
             next_id: 0,
             nodes: Vec::new(),
             events: Vec::new(),
@@ -146,21 +156,23 @@ impl JsonTrace {
         }
     }
 
-    pub fn write(self, path: &str, goal: f64, result: &SolveResult) -> IoResult<()> {
+    pub fn write(self, path: &str, result: &SolveResult) -> IoResult<()> {
         let best_path_node_ids = self.best_path(self.best_node_id);
 
-        let resources = RESOURCES.iter().map(|r| TraceResource { name: r.name }).collect();
+        let resources =
+            self.resource_names.iter().map(|name| TraceResource { name: name.clone() }).collect();
 
         let file = TraceFile {
             meta: TraceMeta {
-                goal,
+                game: self.game_name,
+                goal: self.goal,
                 trace_max_nodes: TRACE_MAX_NODES,
                 trace_max_events: TRACE_MAX_EVENTS,
                 trace_pop_stride: TRACE_POP_STRIDE,
                 iterations: result.iterations,
                 best_time: result.best_time,
                 final_money: result.final_money,
-                final_inventory: result.final_inventory,
+                final_inventory: result.final_inventory.clone(),
                 truncated_nodes: self.truncated_nodes,
                 truncated_events: self.truncated_events,
             },
@@ -218,7 +230,7 @@ impl SearchObserver for JsonTrace {
                 id,
                 parent: node.parent,
                 bought: node.bought,
-                bought_name: node.bought.map(|i| RESOURCES[i].name),
+                bought_name: node.bought.and_then(|i| self.resource_names.get(i).cloned()),
                 depth,
                 iter_created: node.iter_created,
 
@@ -262,16 +274,7 @@ impl SearchObserver for JsonTrace {
     fn reject_buy(&mut self, parent: usize, iter: usize, bought: usize, reason: &'static str) {
         // Rejected branches can be extremely noisy.
         // Leave this disabled unless you specifically want rejection visualization.
-        /*
-        self.push_event(TraceEvent::RejectBuy {
-            parent,
-            iter,
-            bought,
-            reason,
-        });
-        */
-
-        let _ = (parent, iter, bought, reason);
+        let _ = TraceEvent::RejectBuy { parent, iter, bought, reason };
     }
 
     fn best(&mut self, node: usize, iter: usize, best_time: i64) {
