@@ -6,6 +6,7 @@ use std::{
 
 use crate::{
     game::{GameRules, GameState, Inventory},
+    objective::Objective,
     solver::SolveResult,
 };
 
@@ -73,7 +74,7 @@ struct TraceResource {
 #[derive(Serialize)]
 struct TraceMeta {
     game: String,
-    goal: f64,
+    objective: String,
     trace_max_nodes: usize,
     trace_max_events: usize,
     trace_pop_stride: usize,
@@ -127,7 +128,7 @@ struct TraceFile {
 
 pub struct JsonTrace {
     game_name: String,
-    goal: f64,
+    objective_label: String,
     resource_names: Vec<String>,
     next_id: usize,
     nodes: Vec<TraceNode>,
@@ -140,10 +141,10 @@ pub struct JsonTrace {
 }
 
 impl JsonTrace {
-    pub fn new(rules: &GameRules) -> Self {
+    pub fn new(rules: &GameRules, objective: &Objective) -> Self {
         Self {
             game_name: rules.name.clone(),
-            goal: rules.goal,
+            objective_label: objective.label(),
             resource_names: rules.resources.iter().map(|r| r.name.clone()).collect(),
             next_id: 0,
             nodes: Vec::new(),
@@ -165,7 +166,7 @@ impl JsonTrace {
         let file = TraceFile {
             meta: TraceMeta {
                 game: self.game_name,
-                goal: self.goal,
+                objective: self.objective_label,
                 trace_max_nodes: TRACE_MAX_NODES,
                 trace_max_events: TRACE_MAX_EVENTS,
                 trace_pop_stride: TRACE_POP_STRIDE,

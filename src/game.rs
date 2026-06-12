@@ -3,6 +3,7 @@
 /// This module intentionally has no solver/search/tracing logic.  It owns the
 /// things that define "what game are we solving?": resources, prices,
 /// production, initial state, and action application.
+use crate::objective::Objective;
 
 pub type Inventory = Vec<i32>;
 
@@ -30,7 +31,6 @@ pub struct GameState {
 #[derive(Clone, Debug)]
 pub struct GameRules {
     pub name: String,
-    pub goal: f64,
     pub initial_money: f64,
     pub initial_inventory: Inventory,
     pub resources: Vec<ResourceRule>,
@@ -44,7 +44,6 @@ impl GameRules {
             self.resources.len(),
             "initial inventory length must match resource count"
         );
-        assert!(self.goal.is_finite() && self.goal > 0.0, "goal must be positive and finite");
         assert!(
             self.initial_money.is_finite() && self.initial_money >= 0.0,
             "initial money must be non-negative and finite"
@@ -83,20 +82,35 @@ pub struct GameData {
     delta: Vec<Vec<f64>>,
 }
 
+#[derive(Clone, Debug)]
+pub struct GameBounds {
+    pub max_inventory: Inventory,
+}
+
 impl GameData {
-    pub fn new(rules: GameRules) -> Self {
+    pub fn new(rules: GameRules, bounds: GameBounds) -> Self {
         rules.validate();
 
-        let mut max_inventory = rules.initial_inventory.clone();
+        assert_eq!(
+            bounds.max_inventory.len(),
+            rules.resources.len(),
+            "bounds inventory length must match resource count"
+        );
+
+        let max_inventory: Inventory = bounds
+            .max_inventory
+            .iter()
+            .zip(rules.initial_inventory.iter())
+            .map(|(&cap, &initial)| cap.max(initial))
+            .collect();
+
         let (mut cost, mut yield_, mut delta) = (Vec::new(), Vec::new(), Vec::new());
 
         for (i, res) in rules.resources.iter().enumerate() {
-            while (res.cost)(max_inventory[i]) < rules.goal {
-                max_inventory[i] += 1;
-                assert!(max_inventory[i] <= 1_000_000, "Resource {} has no cap", res.name);
-            }
-
             let max_q = max_inventory[i];
+
+            assert!(max_q <= 1_000_000, "Resource {} has an unreasonable cap", res.name);
+
             let ys: Vec<f64> = (0..=max_q + 1).map(|q| (res.production)(q)).collect();
             let cs: Vec<f64> = (0..=max_q).map(|q| (res.cost)(q)).collect();
             let ds: Vec<f64> = (0..=max_q).map(|q| ys[q as usize + 1] - ys[q as usize]).collect();
@@ -230,11 +244,16 @@ fn buy_resource(
     data: &GameData,
     s: &GameState,
     i: usize,
-    goal: f64,
+    objective: &Objective,
+    current_finish: i64,
     cost: f64,
     wait: i64,
 ) -> Option<ActionResult> {
-    if wait == i64::MAX || s.time + wait >= finish_time(s, goal) {
+    if wait == i64::MAX {
+        return None;
+    }
+
+    if current_finish != i64::MAX && s.time.saturating_add(wait) >= current_finish {
         return None;
     }
 
@@ -246,7 +265,7 @@ fn buy_resource(
     Some(ActionResult {
         action: Action::BuyResource(i),
         state: ns.clone(),
-        finish_time: finish_time(&ns, goal),
+        finish_time: objective.finish_time(&ns),
         wait,
         cost_paid: cost,
     })
@@ -256,12 +275,15 @@ pub fn apply_action(
     data: &GameData,
     s: &GameState,
     action: Action,
-    goal: f64,
+    objective: &Objective,
+    current_finish: i64,
     costs: &[f64],
     waits: &[i64],
 ) -> Option<ActionResult> {
     match action {
-        Action::BuyResource(i) => buy_resource(data, s, i, goal, costs[i], waits[i]),
+        Action::BuyResource(i) => {
+            buy_resource(data, s, i, objective, current_finish, costs[i], waits[i])
+        }
     }
 }
 

@@ -3,9 +3,10 @@ use std::{cmp::Ordering, collections::BinaryHeap};
 
 use crate::{
     game::{
-        action_resource_index, apply_action, available_actions, finish_time, next_buy_is_order_dominated,
-        step, time_to_money, Action, GameData, GameRules, GameState, Inventory, MemoKey,
+        action_resource_index, apply_action, available_actions, next_buy_is_order_dominated,
+        time_to_money, Action, GameData, GameRules, GameState, Inventory, MemoKey,
     },
+    objective::Objective,
     tracing::{AcceptedNode, SearchObserver},
 };
 
@@ -33,7 +34,12 @@ impl Default for SearchConfig {
 /// `GameRules` cases and trace observer shape.
 pub trait SolverAlgorithm {
     fn name(&self) -> &'static str;
-    fn solve<O: SearchObserver>(&self, rules: GameRules, observer: &mut O) -> SolveResult;
+    fn solve<O: SearchObserver>(
+        &self,
+        rules: GameRules,
+        objective: Objective,
+        observer: &mut O,
+    ) -> SolveResult;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -46,7 +52,12 @@ impl BranchAndBoundSolver {
         Self { config }
     }
 
-    fn reconstruct_path(&self, data: &GameData, mem: &MemoTable, mut inv: Inventory) -> Vec<String> {
+    fn reconstruct_path(
+        &self,
+        data: &GameData,
+        mem: &MemoTable,
+        mut inv: Inventory,
+    ) -> Vec<String> {
         let mut log = Vec::new();
         while let Some(m) = mem.get_inventory(inv.clone()) {
             if m.bought == usize::MAX {
@@ -70,13 +81,19 @@ impl SolverAlgorithm for BranchAndBoundSolver {
         "branch-and-bound"
     }
 
-    fn solve<O: SearchObserver>(&self, rules: GameRules, observer: &mut O) -> SolveResult {
-        let goal = rules.goal;
-        let data = GameData::new(rules);
+    fn solve<O: SearchObserver>(
+        &self,
+        rules: GameRules,
+        objective: Objective,
+        observer: &mut O,
+    ) -> SolveResult {
+        let bounds = objective.bounds_for_rules(&rules);
+        let data = GameData::new(rules, bounds);
+        objective.validate(&data);
         let mut mem = MemoTable::new();
         let mut q = BinaryHeap::new();
         let s0 = data.initial_state();
-        let s0_finish = finish_time(&s0, goal);
+        let s0_finish = objective.finish_time(&s0);
 
         let root_id = observer.accept_node(AcceptedNode {
             parent: None,
@@ -122,7 +139,7 @@ impl SolverAlgorithm for BranchAndBoundSolver {
                 }
             }
 
-            let current_finish = finish_time(&s, goal);
+            let current_finish = objective.finish_time(&s);
             let res_count = data.resource_count();
             let mut costs = vec![0.0; res_count];
             let mut waits = vec![i64::MAX; res_count];
@@ -145,12 +162,14 @@ impl SolverAlgorithm for BranchAndBoundSolver {
                     continue;
                 }
 
-                let Some(result) = apply_action(&data, &s, action, goal, &costs, &waits) else {
+                let Some(result) =
+                    apply_action(&data, &s, action, &objective, current_finish, &costs, &waits)
+                else {
                     observer.reject_buy(id, iter, resource_i, "cannot_buy_before_current_finish");
                     continue;
                 };
 
-                if result.finish_time >= current_finish {
+                if current_finish != i64::MAX && result.finish_time >= current_finish {
                     observer.reject_buy(id, iter, resource_i, "does_not_improve_parent_finish");
                     continue;
                 }
@@ -209,10 +228,10 @@ impl SolverAlgorithm for BranchAndBoundSolver {
             for line in self.reconstruct_path(&data, &mem, best_game.inventory.clone()) {
                 println!("{line}");
             }
-            println!("Then wait until time {best_time} to reach the goal.");
+            println!("Objective {} reached at time {best_time}.", objective.label());
         }
 
-        let final_state = step(&best_game, time_to_money(&best_game, goal));
+        let final_state = objective.final_state(&best_game);
         observer.finish(best_node_id);
 
         SolveResult {

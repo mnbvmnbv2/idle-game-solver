@@ -1,13 +1,8 @@
 use crate::game::{GameRules, ResourceRule};
 
 pub fn default_rules() -> GameRules {
-    rules_with_goal(1e12)
-}
-
-pub fn rules_with_goal(goal: f64) -> GameRules {
     GameRules {
         name: "default".to_string(),
-        goal,
         initial_money: 0.0,
         initial_inventory: vec![1, 0, 0],
         resources: vec![
@@ -29,10 +24,9 @@ pub fn rules_with_goal(goal: f64) -> GameRules {
         ],
     }
 }
-pub fn tiny_rules(goal: f64) -> GameRules {
+pub fn tiny_rules() -> GameRules {
     GameRules {
         name: "tiny".to_string(),
-        goal,
         initial_money: 0.0,
         initial_inventory: vec![1, 0],
         resources: vec![
@@ -50,19 +44,18 @@ pub fn tiny_rules(goal: f64) -> GameRules {
     }
 }
 
-pub fn high_factory_rules(goal: f64) -> GameRules {
-    let mut rules = rules_with_goal(goal);
+pub fn high_factory_rules() -> GameRules {
+    let mut rules = default_rules();
     rules.name = "high_factory".to_string();
     rules.resources[1].production = |q| if q >= 4 { 45. * q as f64 } else { 12. * q as f64 };
     rules
 }
 
-pub fn named(name: &str, goal_override: Option<f64>) -> Option<GameRules> {
-    let goal = goal_override.unwrap_or(1e12);
+pub fn named(name: &str) -> Option<GameRules> {
     match name {
-        "default" => Some(rules_with_goal(goal)),
-        "tiny" => Some(tiny_rules(goal_override.unwrap_or(10_000.0))),
-        "high_factory" => Some(high_factory_rules(goal)),
+        "default" => Some(default_rules()),
+        "tiny" => Some(tiny_rules()),
+        "high_factory" => Some(high_factory_rules()),
         _ => None,
     }
 }

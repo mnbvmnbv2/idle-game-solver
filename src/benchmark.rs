@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use crate::{
     game::GameRules,
+    objective::Objective,
     scenarios,
     solver::{BranchAndBoundSolver, SolveResult, SolverAlgorithm},
     tracing::NullTrace,
@@ -11,6 +12,7 @@ use crate::{
 pub struct BenchmarkCase {
     pub name: &'static str,
     pub rules: GameRules,
+    pub objective: Objective,
     /// Fill this in once you want strict regression detection for a case.
     pub expected_best_time: Option<i64>,
 }
@@ -29,28 +31,45 @@ pub fn benchmark_suite() -> Vec<BenchmarkCase> {
     vec![
         BenchmarkCase {
             name: "tiny_goal_10k",
-            rules: scenarios::tiny_rules(10_000.0),
+            rules: scenarios::tiny_rules(),
+            objective: Objective::money(10_000.0),
             expected_best_time: Some(137),
         },
         BenchmarkCase {
             name: "default_goal_1m",
-            rules: scenarios::rules_with_goal(1_000_000.0),
+            rules: scenarios::default_rules(),
+            objective: Objective::money(1_000_000.0),
             expected_best_time: Some(383),
         },
         BenchmarkCase {
             name: "default_goal_1e10",
-            rules: scenarios::rules_with_goal(1e10),
+            rules: scenarios::default_rules(),
+            objective: Objective::money(1e10),
             expected_best_time: Some(903476),
         },
         BenchmarkCase {
             name: "default_goal_1e12",
-            rules: scenarios::rules_with_goal(1e12),
+            rules: scenarios::default_rules(),
+            objective: Objective::money(1e12),
             expected_best_time: Some(65254751),
         },
         BenchmarkCase {
             name: "high_factory_goal_1m",
-            rules: scenarios::high_factory_rules(1_000_000.0),
+            rules: scenarios::high_factory_rules(),
+            objective: Objective::money(1_000_000.0),
             expected_best_time: Some(347),
+        },
+        BenchmarkCase {
+            name: "default_inventory_2_10_5",
+            rules: scenarios::default_rules(),
+            objective: Objective::inventory_at_least(vec![2, 10, 5]),
+            expected_best_time: None,
+        },
+        BenchmarkCase {
+            name: "default_income_10k",
+            rules: scenarios::default_rules(),
+            objective: Objective::income_at_least(10_000.0),
+            expected_best_time: None,
         },
     ]
 }
@@ -64,7 +83,7 @@ pub fn run_benchmarks(
         .map(|case| {
             let mut trace = NullTrace::default();
             let start = Instant::now();
-            let result = solver.solve(case.rules.clone(), &mut trace);
+            let result = solver.solve(case.rules.clone(), case.objective.clone(), &mut trace);
             let elapsed = start.elapsed();
             let passed =
                 case.expected_best_time.map_or(true, |expected| expected == result.best_time);
