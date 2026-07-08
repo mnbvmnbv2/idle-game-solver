@@ -13,7 +13,6 @@ pub struct BenchmarkCase {
     pub name: &'static str,
     pub rules: GameRules,
     pub objective: Objective,
-    /// Fill this in once you want strict regression detection for a case.
     pub expected_best_time: Option<i64>,
 }
 
