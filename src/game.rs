@@ -1,8 +1,4 @@
 /// Domain model for idle-game rules.
-///
-/// This module intentionally has no solver/search/tracing logic.  It owns the
-/// things that define "what game are we solving?": resources, prices,
-/// production, initial state, and action application.
 use crate::objective::Objective;
 
 pub type Inventory = Vec<i32>;
@@ -52,6 +48,42 @@ impl GameRules {
             resource.validate(i);
         }
     }
+
+    #[inline]
+    pub fn resource_count(&self) -> usize {
+        self.resources.len()
+    }
+
+    #[inline]
+    pub fn resource_name(&self, i: usize) -> &str {
+        &self.resources[i].name
+    }
+
+    #[inline]
+    pub fn cost(&self, i: usize, q: i32) -> f64 {
+        (self.resources[i].cost)(q)
+    }
+
+    #[inline]
+    pub fn delta(&self, i: usize, quantity: i32) -> f64 {
+        let production = self.resources[i].production;
+        production(quantity + 1) - production(quantity)
+    }
+
+    pub fn income(&self, inv: &Inventory) -> f64 {
+        inv.iter().enumerate().map(|(i, &q)| (self.resources[i].production)(q)).sum()
+    }
+
+    pub fn initial_state(&self) -> GameState {
+        let inventory = self.initial_inventory.clone();
+        GameState {
+            time: 0,
+            money: self.initial_money,
+            income: self.income(&inventory),
+            inventory,
+            progression: ProgressionState::base(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -70,97 +102,6 @@ impl ResourceRule {
             "resource {} has invalid initial production",
             self.name
         );
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct GameData {
-    pub rules: GameRules,
-    max_inventory: Inventory,
-    cost: Vec<Vec<f64>>,
-    yield_: Vec<Vec<f64>>,
-    delta: Vec<Vec<f64>>,
-}
-
-#[derive(Clone, Debug)]
-pub struct GameBounds {
-    pub max_inventory: Inventory,
-}
-
-impl GameData {
-    pub fn new(rules: GameRules, bounds: GameBounds) -> Self {
-        rules.validate();
-
-        assert_eq!(
-            bounds.max_inventory.len(),
-            rules.resources.len(),
-            "bounds inventory length must match resource count"
-        );
-
-        let max_inventory: Inventory = bounds
-            .max_inventory
-            .iter()
-            .zip(rules.initial_inventory.iter())
-            .map(|(&cap, &initial)| cap.max(initial))
-            .collect();
-
-        let (mut cost, mut yield_, mut delta) = (Vec::new(), Vec::new(), Vec::new());
-
-        for (i, res) in rules.resources.iter().enumerate() {
-            let max_q = max_inventory[i];
-
-            assert!(max_q <= 1_000_000, "Resource {} has an unreasonable cap", res.name);
-
-            let ys: Vec<f64> = (0..=max_q + 1).map(|q| (res.production)(q)).collect();
-            let cs: Vec<f64> = (0..=max_q).map(|q| (res.cost)(q)).collect();
-            let ds: Vec<f64> = (0..=max_q).map(|q| ys[q as usize + 1] - ys[q as usize]).collect();
-
-            cost.push(cs);
-            yield_.push(ys);
-            delta.push(ds);
-        }
-
-        Self { rules, max_inventory, cost, yield_, delta }
-    }
-
-    #[inline]
-    pub fn resource_count(&self) -> usize {
-        self.rules.resources.len()
-    }
-
-    #[inline]
-    pub fn resource_name(&self, i: usize) -> &str {
-        &self.rules.resources[i].name
-    }
-
-    #[inline]
-    pub fn can_buy_more(&self, inv: &Inventory, i: usize) -> bool {
-        inv[i] < self.max_inventory[i]
-    }
-
-    #[inline]
-    pub fn cost(&self, i: usize, q: i32) -> f64 {
-        self.cost[i][q as usize]
-    }
-
-    #[inline]
-    pub fn delta(&self, i: usize, q: i32) -> f64 {
-        self.delta[i][q as usize]
-    }
-
-    pub fn income(&self, inv: &Inventory) -> f64 {
-        inv.iter().enumerate().map(|(i, &q)| self.yield_[i][q as usize]).sum()
-    }
-
-    pub fn initial_state(&self) -> GameState {
-        let inventory = self.rules.initial_inventory.clone();
-        GameState {
-            time: 0,
-            money: self.rules.initial_money,
-            income: self.income(&inventory),
-            inventory,
-            progression: ProgressionState::base(),
-        }
     }
 }
 
@@ -223,10 +164,14 @@ pub fn finish_time(s: &GameState, goal: f64) -> i64 {
     s.time.saturating_add(time_to_money(s, goal))
 }
 
-pub fn available_actions(data: &GameData, s: &GameState) -> Vec<Action> {
+pub fn available_actions(
+    rules: &GameRules,
+    max_inventory: &Inventory,
+    s: &GameState,
+) -> Vec<Action> {
     let mut actions = Vec::new();
-    for i in 0..data.resource_count() {
-        if data.can_buy_more(&s.inventory, i) {
+    for i in 0..rules.resource_count() {
+        if s.inventory[i] < max_inventory[i] {
             actions.push(Action::BuyResource(i));
         }
     }
@@ -241,7 +186,7 @@ pub fn action_resource_index(action: Action) -> Option<usize> {
 }
 
 fn buy_resource(
-    data: &GameData,
+    rules: &GameRules,
     s: &GameState,
     i: usize,
     objective: &Objective,
@@ -260,7 +205,7 @@ fn buy_resource(
     let mut ns = step(s, wait);
     ns.money -= cost;
     ns.inventory[i] += 1;
-    ns.income += data.delta(i, s.inventory[i]);
+    ns.income += rules.delta(i, s.inventory[i]);
 
     Some(ActionResult {
         action: Action::BuyResource(i),
@@ -272,7 +217,7 @@ fn buy_resource(
 }
 
 pub fn apply_action(
-    data: &GameData,
+    rules: &GameRules,
     s: &GameState,
     action: Action,
     objective: &Objective,
@@ -282,7 +227,7 @@ pub fn apply_action(
 ) -> Option<ActionResult> {
     match action {
         Action::BuyResource(i) => {
-            buy_resource(data, s, i, objective, current_finish, costs[i], waits[i])
+            buy_resource(rules, s, i, objective, current_finish, costs[i], waits[i])
         }
     }
 }

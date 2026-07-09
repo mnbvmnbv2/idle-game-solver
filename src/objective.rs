@@ -1,9 +1,7 @@
-use crate::game::{time_to_money, GameBounds, GameData, GameRules, GameState, Inventory};
+use crate::game::{time_to_money, GameRules, GameState, Inventory};
 
 /// What the solver is trying to reach.
-///
-/// Keep this separate from `GameRules`: rules describe the game, while an
-/// objective describes one benchmark/run target for that game.
+
 #[derive(Clone, Debug)]
 pub enum Objective {
     Money { amount: f64 },
@@ -32,7 +30,7 @@ impl Objective {
         }
     }
 
-    pub fn validate(&self, data: &GameData) {
+    pub fn validate(&self) {
         match self {
             Self::Money { amount } | Self::IncomeAtLeast { amount } => {
                 assert!(
@@ -41,11 +39,6 @@ impl Objective {
                 );
             }
             Self::InventoryAtLeast { quantities } => {
-                assert_eq!(
-                    quantities.len(),
-                    data.resource_count(),
-                    "inventory objective length must match resource count"
-                );
                 assert!(
                     quantities.iter().all(|&q| q >= 0),
                     "inventory objective cannot contain negative quantities"
@@ -109,7 +102,23 @@ impl Objective {
         }
     }
 
-    pub fn bounds_for_rules(&self, rules: &GameRules) -> GameBounds {
+    pub fn can_buy_resource(&self, state: &GameState, resource: usize) -> bool {
+        match self {
+            // The existing branch-and-bound checks decide whether
+            // another purchase is useful.
+            Self::Money { .. } => true,
+
+            // Buying beyond the requested quantity cannot help.
+            Self::InventoryAtLeast { quantities } => {
+                state.inventory[resource] < quantities[resource]
+            }
+
+            // Stop generating actions after reaching the target.
+            Self::IncomeAtLeast { amount } => state.income < *amount,
+        }
+    }
+
+    pub fn max_inventory_for_rules(&self, rules: &GameRules) -> Inventory {
         let max_inventory = match self {
             Self::Money { amount } => rules
                 .resources
@@ -159,7 +168,6 @@ impl Objective {
                 })
                 .collect(),
         };
-
-        GameBounds { max_inventory }
+        max_inventory
     }
 }

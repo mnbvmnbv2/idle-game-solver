@@ -4,7 +4,7 @@ use std::{cmp::Ordering, collections::BinaryHeap};
 use crate::{
     game::{
         action_resource_index, apply_action, available_actions, next_buy_is_order_dominated,
-        time_to_money, Action, GameData, GameRules, GameState, Inventory, MemoKey,
+        time_to_money, Action, GameRules, GameState, Inventory, MemoKey,
     },
     objective::Objective,
     tracing::{AcceptedNode, SearchObserver},
@@ -54,7 +54,7 @@ impl BranchAndBoundSolver {
 
     fn reconstruct_path(
         &self,
-        data: &GameData,
+        rules: &GameRules,
         mem: &MemoTable,
         mut inv: Inventory,
     ) -> Vec<String> {
@@ -66,7 +66,7 @@ impl BranchAndBoundSolver {
             log.push(format!(
                 "At time {}, bought {}, inventory {:?}",
                 m.time,
-                data.resource_name(m.bought),
+                rules.resource_name(m.bought),
                 inv
             ));
             inv[m.bought] -= 1;
@@ -87,12 +87,13 @@ impl SolverAlgorithm for BranchAndBoundSolver {
         objective: Objective,
         observer: &mut O,
     ) -> SolveResult {
-        let bounds = objective.bounds_for_rules(&rules);
-        let data = GameData::new(rules, bounds);
-        objective.validate(&data);
+        rules.validate();
+        let max_inventory = objective.max_inventory_for_rules(&rules);
+
+        objective.validate();
         let mut mem = MemoTable::new();
         let mut q = BinaryHeap::new();
-        let s0 = data.initial_state();
+        let s0 = rules.initial_state();
         let s0_finish = objective.finish_time(&s0);
 
         let root_id = observer.accept_node(AcceptedNode {
@@ -140,20 +141,20 @@ impl SolverAlgorithm for BranchAndBoundSolver {
             }
 
             let current_finish = objective.finish_time(&s);
-            let res_count = data.resource_count();
+            let res_count = rules.resource_count();
             let mut costs = vec![0.0; res_count];
             let mut waits = vec![i64::MAX; res_count];
             let mut deltas = vec![0.0; res_count];
 
             for i in 0..res_count {
-                if data.can_buy_more(&s.inventory, i) {
-                    costs[i] = data.cost(i, s.inventory[i]);
+                if objective.can_buy_resource(&s, i) {
+                    costs[i] = rules.cost(i, s.inventory[i]);
                     waits[i] = time_to_money(&s, costs[i]);
-                    deltas[i] = data.delta(i, s.inventory[i]);
+                    deltas[i] = rules.delta(i, s.inventory[i]);
                 }
             }
 
-            for action in available_actions(&data, &s) {
+            for action in available_actions(&rules, &max_inventory, &s) {
                 let Some(resource_i) = action_resource_index(action) else {
                     continue;
                 };
@@ -163,7 +164,7 @@ impl SolverAlgorithm for BranchAndBoundSolver {
                 }
 
                 let Some(result) =
-                    apply_action(&data, &s, action, &objective, current_finish, &costs, &waits)
+                    apply_action(&rules, &s, action, &objective, current_finish, &costs, &waits)
                 else {
                     observer.reject_buy(id, iter, resource_i, "cannot_buy_before_current_finish");
                     continue;
@@ -225,7 +226,7 @@ impl SolverAlgorithm for BranchAndBoundSolver {
         }
 
         if self.config.verbose {
-            for line in self.reconstruct_path(&data, &mem, best_game.inventory.clone()) {
+            for line in self.reconstruct_path(&rules, &mem, best_game.inventory.clone()) {
                 println!("{line}");
             }
             println!("Objective {} reached at time {best_time}.", objective.label());
