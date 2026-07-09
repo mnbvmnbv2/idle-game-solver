@@ -3,8 +3,8 @@ use std::{cmp::Ordering, collections::BinaryHeap};
 
 use crate::{
     game::{
-        action_resource_index, apply_action, available_actions, next_buy_is_order_dominated,
-        time_to_money, Action, GameRules, GameState, Inventory, MemoKey,
+        action_resource_index, apply_action, available_actions, time_to_money, Action, GameRules,
+        GameState, Inventory, MemoKey,
     },
     objective::Objective,
     tracing::{AcceptedNode, SearchObserver},
@@ -242,6 +242,22 @@ impl SolverAlgorithm for BranchAndBoundSolver {
             final_inventory: final_state.inventory,
         }
     }
+}
+
+pub fn next_buy_is_order_dominated(
+    candidate: usize,
+    costs: &[f64],
+    waits: &[i64],
+    deltas: &[f64],
+) -> bool {
+    let wait_c = waits[candidate];
+    wait_c != i64::MAX
+        && (0..costs.len()).any(|first| {
+            first != candidate
+                && waits[first] < wait_c
+                && deltas[first] > 0.0
+                && deltas[first] * (wait_c - waits[first]) as f64 + 1e-9 >= costs[first]
+        })
 }
 
 #[derive(Clone, Debug)]
