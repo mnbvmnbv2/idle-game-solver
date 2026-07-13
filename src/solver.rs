@@ -266,12 +266,10 @@ pub struct MemoKey {
     pub progression: ProgressionState,
 }
 impl MemoKey {
-    #[inline]
     pub fn from_state(s: &GameState) -> Self {
         Self { inventory: s.inventory.clone(), progression: s.progression.clone() }
     }
 
-    #[inline]
     pub fn from_inventory(inventory: Inventory) -> Self {
         Self { inventory, progression: ProgressionState::base() }
     }
@@ -295,40 +293,28 @@ impl MemoTable {
         Self { data: FxHashMap::default() }
     }
 
-    #[inline]
     fn get_key(&self, key: &MemoKey) -> Option<MemoEntry> {
         self.data.get(key).cloned()
     }
-
-    #[inline]
     fn get_state(&self, state: &GameState) -> Option<MemoEntry> {
         self.get_key(&MemoKey::from_state(state))
     }
 
-    #[inline]
     fn get_inventory(&self, inventory: Inventory) -> Option<MemoEntry> {
         self.get_key(&MemoKey::from_inventory(inventory))
     }
-
-    #[inline]
     fn insert_key(&mut self, key: MemoKey, entry: MemoEntry) {
         self.data.insert(key, entry);
     }
-
-    #[inline]
     fn insert_state(&mut self, state: &GameState, entry: MemoEntry) {
         self.insert_key(MemoKey::from_state(state), entry);
     }
-
-    #[inline]
     fn is_better_key(&self, key: &MemoKey, time: i64, money: f64) -> bool {
         match self.data.get(key) {
             Some(m) => time < m.time || (time == m.time && money > m.money),
             None => true,
         }
     }
-
-    #[inline]
     fn is_better_state(&self, state: &GameState) -> bool {
         self.is_better_key(&MemoKey::from_state(state), state.time, state.money)
     }

@@ -49,19 +49,15 @@ impl GameRules {
         }
     }
 
-    #[inline]
     pub fn resource_count(&self) -> usize {
         self.resources.len()
     }
-    #[inline]
     pub fn resource_name(&self, i: usize) -> &str {
         &self.resources[i].name
     }
-    #[inline]
     pub fn cost(&self, i: usize, q: i32) -> f64 {
         (self.resources[i].cost)(q)
     }
-    #[inline]
     pub fn delta(&self, i: usize, quantity: i32) -> f64 {
         let production = self.resources[i].production;
         production(quantity + 1) - production(quantity)
@@ -118,7 +114,6 @@ pub struct ActionResult {
     pub cost_paid: f64,
 }
 
-#[inline]
 pub fn step(s: &GameState, t: i64) -> GameState {
     let mut next = s.clone();
     next.time += t;
@@ -126,7 +121,6 @@ pub fn step(s: &GameState, t: i64) -> GameState {
     next
 }
 
-#[inline]
 pub fn time_to_money(s: &GameState, goal: f64) -> i64 {
     if s.money >= goal {
         0
@@ -137,7 +131,6 @@ pub fn time_to_money(s: &GameState, goal: f64) -> i64 {
     }
 }
 
-#[inline]
 pub fn finish_time(s: &GameState, goal: f64) -> i64 {
     s.time.saturating_add(time_to_money(s, goal))
 }
@@ -156,7 +149,6 @@ pub fn available_actions(
     actions
 }
 
-#[inline]
 pub fn action_resource_index(action: Action) -> Option<usize> {
     match action {
         Action::BuyResource(i) => Some(i),
