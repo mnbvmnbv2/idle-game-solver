@@ -42,3 +42,7 @@ cargo run --release -- benchmark
 ```
 
 When intentionally changing solver behavior or game rules, update the expected values in `src/benchmark.rs` after reviewing the new results.
+
+## Website
+
+`uv run -m http.server 8080`
