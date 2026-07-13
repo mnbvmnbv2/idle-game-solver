@@ -27,11 +27,8 @@ pub struct AcceptedNode {
 
 pub trait SearchObserver {
     fn accept_node(&mut self, node: AcceptedNode) -> usize;
-
     fn start(&mut self, _node: usize, _best_time: i64) {}
-
     fn pop(&mut self, _node: usize, _iter: usize, _queue_len: usize, _best_time: i64) {}
-
     fn accept_buy(
         &mut self,
         _node: usize,
@@ -41,15 +38,10 @@ pub trait SearchObserver {
         _finish_time: i64,
     ) {
     }
-
     fn reject_buy(&mut self, _parent: usize, _iter: usize, _bought: usize, _reason: &'static str) {}
-
     fn best(&mut self, _node: usize, _iter: usize, _best_time: i64) {}
-
     fn prune(&mut self, _node: usize, _iter: usize, _reason: &'static str) {}
-
     fn truncated(&mut self, _iter: usize, _what: &'static str) {}
-
     fn finish(&mut self, _best_node: usize) {}
 }
 
@@ -275,7 +267,7 @@ impl SearchObserver for JsonTrace {
     fn reject_buy(&mut self, parent: usize, iter: usize, bought: usize, reason: &'static str) {
         // Rejected branches can be extremely noisy.
         // Leave this disabled unless you specifically want rejection visualization.
-        let _ = TraceEvent::RejectBuy { parent, iter, bought, reason };
+        self.push_event(TraceEvent::RejectBuy { parent, iter, bought, reason });
     }
 
     fn best(&mut self, node: usize, iter: usize, best_time: i64) {

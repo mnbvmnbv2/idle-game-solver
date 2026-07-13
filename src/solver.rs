@@ -1,6 +1,3 @@
-use rustc_hash::FxHashMap;
-use std::{cmp::Ordering, collections::BinaryHeap};
-
 use crate::{
     game::{
         action_resource_index, apply_action, available_actions, time_to_money, Action, GameRules,
@@ -9,6 +6,8 @@ use crate::{
     objective::Objective,
     tracing::{AcceptedNode, SearchObserver},
 };
+use rustc_hash::FxHashMap;
+use std::{cmp::Ordering, collections::BinaryHeap};
 
 #[derive(Debug, Clone)]
 pub struct SolveResult {
@@ -23,15 +22,12 @@ pub struct SearchConfig {
     pub max_nodes: usize,
     pub verbose: bool,
 }
-
 impl Default for SearchConfig {
     fn default() -> Self {
         Self { max_nodes: 10_000_000, verbose: false }
     }
 }
 
-/// Solver interface so future algorithms can be benchmarked against the same
-/// `GameRules` cases and trace observer shape.
 pub trait SolverAlgorithm {
     fn name(&self) -> &'static str;
     fn solve<O: SearchObserver>(
@@ -89,8 +85,8 @@ impl SolverAlgorithm for BranchAndBoundSolver {
     ) -> SolveResult {
         rules.validate();
         let max_inventory = objective.max_inventory_for_rules(&rules);
-
         objective.validate();
+
         let mut mem = MemoTable::new();
         let mut q = BinaryHeap::new();
         let s0 = rules.initial_state();
@@ -105,8 +101,8 @@ impl SolverAlgorithm for BranchAndBoundSolver {
             wait: None,
             cost_paid: None,
         });
-
         observer.start(root_id, s0_finish);
+
         mem.insert_state(
             &s0,
             MemoEntry { time: 0, money: s0.money, bought: usize::MAX, node_id: root_id },
@@ -292,14 +288,12 @@ impl MemoTable {
     fn new() -> Self {
         Self { data: FxHashMap::default() }
     }
-
     fn get_key(&self, key: &MemoKey) -> Option<MemoEntry> {
         self.data.get(key).cloned()
     }
     fn get_state(&self, state: &GameState) -> Option<MemoEntry> {
         self.get_key(&MemoKey::from_state(state))
     }
-
     fn get_inventory(&self, inventory: Inventory) -> Option<MemoEntry> {
         self.get_key(&MemoKey::from_inventory(inventory))
     }
