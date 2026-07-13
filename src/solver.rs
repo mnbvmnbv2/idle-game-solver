@@ -30,24 +30,6 @@ impl Default for SearchConfig {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct MemoKey {
-    pub inventory: Inventory,
-    pub progression: ProgressionState,
-}
-
-impl MemoKey {
-    #[inline]
-    pub fn from_state(s: &GameState) -> Self {
-        Self { inventory: s.inventory.clone(), progression: s.progression.clone() }
-    }
-
-    #[inline]
-    pub fn from_inventory(inventory: Inventory) -> Self {
-        Self { inventory, progression: ProgressionState::base() }
-    }
-}
-
 /// Solver interface so future algorithms can be benchmarked against the same
 /// `GameRules` cases and trace observer shape.
 pub trait SolverAlgorithm {
@@ -276,6 +258,23 @@ pub fn next_buy_is_order_dominated(
                 && deltas[first] > 0.0
                 && deltas[first] * (wait_c - waits[first]) as f64 + 1e-9 >= costs[first]
         })
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct MemoKey {
+    pub inventory: Inventory,
+    pub progression: ProgressionState,
+}
+impl MemoKey {
+    #[inline]
+    pub fn from_state(s: &GameState) -> Self {
+        Self { inventory: s.inventory.clone(), progression: s.progression.clone() }
+    }
+
+    #[inline]
+    pub fn from_inventory(inventory: Inventory) -> Self {
+        Self { inventory, progression: ProgressionState::base() }
+    }
 }
 
 #[derive(Clone, Debug)]

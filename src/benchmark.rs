@@ -1,11 +1,12 @@
-use std::time::{Duration, Instant};
-
-use crate::{
-    game::GameRules,
-    objective::Objective,
-    scenarios,
-    solver::{BranchAndBoundSolver, SolveResult, SolverAlgorithm},
-    tracing::NullTrace,
+use {
+    crate::{
+        game::GameRules,
+        objective::Objective,
+        scenarios,
+        solver::{BranchAndBoundSolver, SolveResult, SolverAlgorithm},
+        tracing::NullTrace,
+    },
+    std::time::{Duration, Instant},
 };
 
 #[derive(Clone, Debug)]

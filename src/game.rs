@@ -53,23 +53,19 @@ impl GameRules {
     pub fn resource_count(&self) -> usize {
         self.resources.len()
     }
-
     #[inline]
     pub fn resource_name(&self, i: usize) -> &str {
         &self.resources[i].name
     }
-
     #[inline]
     pub fn cost(&self, i: usize, q: i32) -> f64 {
         (self.resources[i].cost)(q)
     }
-
     #[inline]
     pub fn delta(&self, i: usize, quantity: i32) -> f64 {
         let production = self.resources[i].production;
         production(quantity + 1) - production(quantity)
     }
-
     pub fn income(&self, inv: &Inventory) -> f64 {
         inv.iter().enumerate().map(|(i, &q)| (self.resources[i].production)(q)).sum()
     }
