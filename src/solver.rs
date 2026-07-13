@@ -4,7 +4,7 @@ use std::{cmp::Ordering, collections::BinaryHeap};
 use crate::{
     game::{
         action_resource_index, apply_action, available_actions, time_to_money, Action, GameRules,
-        GameState, Inventory, MemoKey,
+        GameState, Inventory, ProgressionState,
     },
     objective::Objective,
     tracing::{AcceptedNode, SearchObserver},
@@ -27,6 +27,24 @@ pub struct SearchConfig {
 impl Default for SearchConfig {
     fn default() -> Self {
         Self { max_nodes: 10_000_000, verbose: false }
+    }
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct MemoKey {
+    pub inventory: Inventory,
+    pub progression: ProgressionState,
+}
+
+impl MemoKey {
+    #[inline]
+    pub fn from_state(s: &GameState) -> Self {
+        Self { inventory: s.inventory.clone(), progression: s.progression.clone() }
+    }
+
+    #[inline]
+    pub fn from_inventory(inventory: Inventory) -> Self {
+        Self { inventory, progression: ProgressionState::base() }
     }
 }
 

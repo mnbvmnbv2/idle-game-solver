@@ -122,24 +122,6 @@ pub struct ActionResult {
     pub cost_paid: f64,
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct MemoKey {
-    pub inventory: Inventory,
-    pub progression: ProgressionState,
-}
-
-impl MemoKey {
-    #[inline]
-    pub fn from_state(s: &GameState) -> Self {
-        Self { inventory: s.inventory.clone(), progression: s.progression.clone() }
-    }
-
-    #[inline]
-    pub fn from_inventory(inventory: Inventory) -> Self {
-        Self { inventory, progression: ProgressionState::base() }
-    }
-}
-
 #[inline]
 pub fn step(s: &GameState, t: i64) -> GameState {
     let mut next = s.clone();
