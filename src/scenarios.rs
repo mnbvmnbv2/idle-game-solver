@@ -51,57 +51,57 @@ pub fn cookie_clicker_rules() -> GameRules {
         resources: vec![
             ResourceRule {
                 name: "Cursor".to_string(),
-                cost: |q| 15. * 1.15_f64.powi(q),
+                cost: |q| 15. * 1.15_f64.powi(q).ceil(),
                 production: |q| 0.1 * q as f64,
             },
             ResourceRule {
                 name: "Grandma".to_string(),
-                cost: |q| 100. * 1.15_f64.powi(q),
+                cost: |q| 100. * 1.15_f64.powi(q).ceil(),
                 production: |q| 1. * q as f64,
             },
             ResourceRule {
                 name: "Farm".to_string(),
-                cost: |q| 1100. * 1.15_f64.powi(q),
+                cost: |q| 1100. * 1.15_f64.powi(q).ceil(),
                 production: |q| 8. * q as f64,
             },
             ResourceRule {
                 name: "Mine".to_string(),
-                cost: |q| 12000. * 1.15_f64.powi(q),
+                cost: |q| 12000. * 1.15_f64.powi(q).ceil(),
                 production: |q| 47. * q as f64,
             },
             ResourceRule {
                 name: "Factory".to_string(),
-                cost: |q| 130_000. * 1.15_f64.powi(q),
+                cost: |q| 130_000. * 1.15_f64.powi(q).ceil(),
                 production: |q| 260. * q as f64,
             },
             ResourceRule {
                 name: "Bank".to_string(),
-                cost: |q| 1_400_000. * 1.15_f64.powi(q),
+                cost: |q| 1_400_000. * 1.15_f64.powi(q).ceil(),
                 production: |q| 1400. * q as f64,
             },
             ResourceRule {
                 name: "Temple".to_string(),
-                cost: |q| 20_000_000. * 1.15_f64.powi(q),
+                cost: |q| 20_000_000. * 1.15_f64.powi(q).ceil(),
                 production: |q| 7800. * q as f64,
             },
             ResourceRule {
                 name: "Wizard Tower".to_string(),
-                cost: |q| 330_000_000. * 1.15_f64.powi(q),
+                cost: |q| 330_000_000. * 1.15_f64.powi(q).ceil(),
                 production: |q| 44_000. * q as f64,
             },
             ResourceRule {
                 name: "Shipment".to_string(),
-                cost: |q| 5_100_000_000. * 1.15_f64.powi(q),
+                cost: |q| 5_100_000_000. * 1.15_f64.powi(q).ceil(),
                 production: |q| 260_000. * q as f64,
             },
             ResourceRule {
                 name: "Alchemy Lab".to_string(),
-                cost: |q| 75_000_000_000. * 1.15_f64.powi(q),
+                cost: |q| 75_000_000_000. * 1.15_f64.powi(q).ceil(),
                 production: |q| 1_600_000. * q as f64,
             },
             ResourceRule {
                 name: "Portal".to_string(),
-                cost: |q| 1_000_000_000_000. * 1.15_f64.powi(q),
+                cost: |q| 1_000_000_000_000. * 1.15_f64.powi(q).ceil(),
                 production: |q| 10_000_000. * q as f64,
             },
         ],
